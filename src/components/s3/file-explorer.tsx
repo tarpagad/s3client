@@ -34,12 +34,14 @@ import { UploadZone } from "./upload-zone";
 interface FileExplorerProps {
 	bucketName: string;
 	initialObjects: S3ObjectInfo[];
+	initialNextToken?: string;
 	initialPrefs: UserPrefs;
 }
 
 export function FileExplorer({
 	bucketName,
 	initialObjects,
+	initialNextToken,
 	initialPrefs,
 }: FileExplorerProps) {
 	const [prefix, setPrefix] = useState("");
@@ -51,7 +53,12 @@ export function FileExplorer({
 	);
 	const [showUpload, setShowUpload] = useState(false);
 	const [previewObject, setPreviewObject] = useState<S3ObjectInfo | null>(null);
+	const [nextToken, setNextToken] = useState<string | undefined>(
+		initialNextToken,
+	);
+	const [prevTokens, setPrevTokens] = useState<string[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
+	const [sortBy, setSortBy] = useState<"date-desc" | "date-asc">("date-desc");
 
 	const getFileIcon = (obj: S3ObjectInfo) => {
 		if (obj.type === "folder")
@@ -113,13 +120,22 @@ export function FileExplorer({
 		return <File size={40} className="text-muted-foreground" />;
 	};
 
-	async function fetchObjects(newPrefix: string) {
+	async function fetchObjects(newPrefix: string, token?: string) {
 		setLoading(true);
 		try {
-			const data = await listObjects(bucketName, newPrefix);
-			setObjects(data);
+			const data = await listObjects(
+				bucketName,
+				newPrefix,
+				initialPrefs.itemsPerPage,
+				token,
+			);
+			setObjects(data.objects);
+			setNextToken(data.nextToken);
 			setPrefix(newPrefix);
-			setCurrentPage(1); // Reset to page 1 on folder change
+			if (!token) {
+				setPrevTokens([]);
+				setCurrentPage(1);
+			}
 		} catch (error: unknown) {
 			toast.error(
 				error instanceof Error ? error.message : "Failed to load objects",
@@ -127,6 +143,23 @@ export function FileExplorer({
 		} finally {
 			setLoading(false);
 		}
+	}
+
+	async function handleNextPage() {
+		if (!nextToken) return;
+		setPrevTokens([...prevTokens, nextToken]);
+		await fetchObjects(prefix, nextToken);
+		setCurrentPage(currentPage + 1);
+	}
+
+	async function handlePrevPage() {
+		if (currentPage === 1) return;
+		const newPrevTokens = [...prevTokens];
+		newPrevTokens.pop(); // Remove current
+		const lastToken = newPrevTokens[newPrevTokens.length - 1];
+		setPrevTokens(newPrevTokens);
+		await fetchObjects(prefix, lastToken);
+		setCurrentPage(currentPage - 1);
 	}
 
 	function handlePreview(obj: S3ObjectInfo) {
@@ -139,13 +172,16 @@ export function FileExplorer({
 		obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
 	);
 
-	const totalPages = Math.ceil(
-		filteredObjects.length / initialPrefs.itemsPerPage,
-	);
-	const paginatedObjects = filteredObjects.slice(
-		(currentPage - 1) * initialPrefs.itemsPerPage,
-		currentPage * initialPrefs.itemsPerPage,
-	);
+	// Sort items
+	const sortedObjects = [...filteredObjects].sort((a, b) => {
+		if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+		if (sortBy === "date-desc") {
+			return (
+				(b.lastModified?.getTime() || 0) - (a.lastModified?.getTime() || 0)
+			);
+		}
+		return (a.lastModified?.getTime() || 0) - (b.lastModified?.getTime() || 0);
+	});
 
 	const formatSize = (bytes?: number) => {
 		if (bytes === undefined) return "-";
@@ -283,7 +319,7 @@ export function FileExplorer({
 										</td>
 									</tr>
 								)}
-								{paginatedObjects.map((obj) => (
+								{sortedObjects.map((obj) => (
 									<tr
 										key={obj.key}
 										className="hover:bg-muted/30 transition-colors group"
@@ -353,7 +389,7 @@ export function FileExplorer({
 					</div>
 				) : (
 					<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-						{paginatedObjects.map((obj) => (
+						{sortedObjects.map((obj) => (
 							<Card
 								key={obj.key}
 								className={cn(
@@ -404,55 +440,38 @@ export function FileExplorer({
 			</div>
 
 			{/* Pagination Controls */}
-			{totalPages > 1 && (
+			{(nextToken || currentPage > 1) && (
 				<div className="flex items-center justify-between px-2 py-4 border-t border-border/40">
 					<div className="text-sm text-muted-foreground">
-						Showing{" "}
-						<span className="font-medium">
-							{(currentPage - 1) * initialPrefs.itemsPerPage + 1}
-						</span>{" "}
-						to{" "}
-						<span className="font-medium">
-							{Math.min(
-								currentPage * initialPrefs.itemsPerPage,
-								filteredObjects.length,
-							)}
-						</span>{" "}
-						of <span className="font-medium">{filteredObjects.length}</span>{" "}
-						results
+						Page{" "}
+						<span className="font-medium text-foreground">{currentPage}</span>
 					</div>
 					<div className="flex items-center gap-2">
+						<select
+							value={sortBy}
+							onChange={(e) =>
+								setSortBy(e.target.value as "date-desc" | "date-asc")
+							}
+							className="h-8 text-xs rounded-md border border-input bg-background px-2 py-1 outline-none mr-4"
+						>
+							<option value="date-desc">Newest First</option>
+							<option value="date-asc">Oldest First</option>
+						</select>
+
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-							disabled={currentPage === 1}
+							onClick={handlePrevPage}
+							disabled={currentPage === 1 || loading}
 							className="h-8 gap-1"
 						>
 							<ChevronLeft size={16} /> Previous
 						</Button>
-						<div className="flex items-center gap-1">
-							{Array.from({ length: totalPages }, (_, i) => i + 1).map(
-								(page) => (
-									<Button
-										key={page}
-										variant={currentPage === page ? "default" : "ghost"}
-										size="sm"
-										onClick={() => setCurrentPage(page)}
-										className="h-8 w-8 p-0"
-									>
-										{page}
-									</Button>
-								),
-							)}
-						</div>
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() =>
-								setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-							}
-							disabled={currentPage === totalPages}
+							onClick={handleNextPage}
+							disabled={!nextToken || loading}
 							className="h-8 gap-1"
 						>
 							Next <ChevronRight size={16} />

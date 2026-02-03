@@ -24,3 +24,9 @@ export interface S3ObjectInfo {
 	extension?: string;
 	isPublic?: boolean;
 }
+
+export interface ListObjectsResponse {
+	objects: S3ObjectInfo[];
+	nextToken?: string;
+	totalObjects?: number;
+}

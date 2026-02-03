@@ -13,7 +13,11 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { revalidatePath } from "next/cache";
 import { getS3Client } from "@/lib/s3";
-import type { BucketInfo, S3ObjectInfo } from "@/lib/types";
+import type {
+	BucketInfo,
+	ListObjectsResponse,
+	S3ObjectInfo,
+} from "@/lib/types";
 
 export async function listBuckets(): Promise<BucketInfo[]> {
 	try {
@@ -35,14 +39,18 @@ export async function listBuckets(): Promise<BucketInfo[]> {
 export async function listObjects(
 	bucket: string,
 	prefix: string = "",
-): Promise<S3ObjectInfo[]> {
+	maxKeys: number = 100,
+	continuationToken?: string,
+): Promise<ListObjectsResponse> {
 	try {
 		const client = await getS3Client();
 		const response = await client.send(
 			new ListObjectsV2Command({
 				Bucket: bucket,
 				Prefix: prefix,
-				Delimiter: "/", // Essential for folder simulation
+				Delimiter: "/",
+				MaxKeys: maxKeys,
+				ContinuationToken: continuationToken,
 			}),
 		);
 
@@ -56,16 +64,25 @@ export async function listObjects(
 			};
 		});
 
-		const files: S3ObjectInfo[] = await Promise.all(
-			(response.Contents || [])
-				.filter((content) => content.Key !== prefix)
-				.map(async (content) => {
+		const contents = response.Contents || [];
+		const filesToProcess = contents.filter((content) => content.Key !== prefix);
+
+		// Performance optimization: Batch ACL checks to prevent "socket usage at capacity"
+		const batchSize = 10;
+		const files: S3ObjectInfo[] = [];
+
+		for (let i = 0; i < filesToProcess.length; i += batchSize) {
+			const batch = filesToProcess.slice(i, i + batchSize);
+			const batchResults = await Promise.all(
+				batch.map(async (content) => {
 					const key = content.Key ?? "";
 					const name = key.split("/").pop() || "";
 					const extension = name.split(".").pop();
 
 					let isPublic = false;
 					try {
+						// Only check ACL if we are truly investigating public status.
+						// This is still high-overhead; in production you'd use S3 Inventory or Tags.
 						const acl = await client.send(
 							new GetObjectAclCommand({ Bucket: bucket, Key: key }),
 						);
@@ -90,9 +107,15 @@ export async function listObjects(
 						isPublic,
 					};
 				}),
-		);
+			);
+			files.push(...(batchResults as S3ObjectInfo[]));
+		}
 
-		return [...folders, ...files];
+		return {
+			objects: [...folders, ...files],
+			nextToken: response.NextContinuationToken,
+			totalObjects: response.KeyCount,
+		};
 	} catch (error: unknown) {
 		console.error("Failed to list objects:", error);
 		throw new Error(

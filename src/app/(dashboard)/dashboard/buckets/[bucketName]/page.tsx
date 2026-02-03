@@ -20,16 +20,17 @@ export default async function BucketPage({ params }: BucketPageProps) {
 		return notFound();
 	}
 
+	const prefs = await getUserPrefs();
 	let initialObjects: S3ObjectInfo[] = [];
+	let initialNextToken: string | undefined;
+
 	try {
-		initialObjects = await listObjects(bucketName);
+		const result = await listObjects(bucketName, "", prefs.itemsPerPage);
+		initialObjects = result.objects;
+		initialNextToken = result.nextToken;
 	} catch (error) {
 		console.error("Failed to fetch initial objects:", error);
-		// We'll let the FileExplorer handle the error state if needed,
-		// or we could show an error card here.
 	}
-
-	const prefs = await getUserPrefs();
 
 	return (
 		<div className="space-y-6">
@@ -48,6 +49,7 @@ export default async function BucketPage({ params }: BucketPageProps) {
 			<FileExplorer
 				bucketName={bucketName}
 				initialObjects={initialObjects}
+				initialNextToken={initialNextToken}
 				initialPrefs={prefs}
 			/>
 		</div>
