@@ -37,7 +37,7 @@ export function ConnectForm() {
 		// Client-side validation
 		const result = s3CredentialsSchema.safeParse(data);
 		if (!result.success) {
-			toast.error(result.error.errors[0].message);
+			toast.error(result.error.issues[0].message);
 			setLoading(false);
 			return;
 		}
