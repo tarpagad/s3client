@@ -4,6 +4,7 @@ import {
 	Copy,
 	Download,
 	Edit2,
+	Eye,
 	Globe,
 	MoreVertical,
 	Trash2,
@@ -14,6 +15,7 @@ import { getDownloadUrl, makePublic } from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
 import type { S3ObjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { PreviewModal } from "./preview-modal";
 import { RenameDialog } from "./rename-dialog";
 
 interface ObjectActionsProps {
@@ -21,6 +23,7 @@ interface ObjectActionsProps {
 	object: S3ObjectInfo;
 	onRefresh: () => void;
 	onDelete: (key: string) => void;
+	onRename?: (oldKey: string, newKey: string) => void;
 }
 
 export function ObjectActions({
@@ -28,10 +31,12 @@ export function ObjectActions({
 	object,
 	onRefresh,
 	onDelete,
+	onRename,
 }: ObjectActionsProps) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [openUp, setOpenUp] = useState(false);
 	const [showRename, setShowRename] = useState(false);
+	const [showPreview, setShowPreview] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -118,6 +123,20 @@ export function ObjectActions({
 					{object.type === "file" && (
 						<button
 							type="button"
+							onClick={() => {
+								setShowPreview(true);
+								setIsOpen(false);
+							}}
+							className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent text-left transition-colors"
+						>
+							<Eye size={14} className="text-muted-foreground" />
+							Preview
+						</button>
+					)}
+
+					{object.type === "file" && (
+						<button
+							type="button"
 							onClick={handleDownload}
 							className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent text-left transition-colors"
 						>
@@ -191,6 +210,15 @@ export function ObjectActions({
 					oldKey={object.key}
 					onClose={() => setShowRename(false)}
 					onSuccess={onRefresh}
+					onOptimisticRename={onRename}
+				/>
+			)}
+
+			{showPreview && (
+				<PreviewModal
+					bucketName={bucketName}
+					object={object}
+					onClose={() => setShowPreview(false)}
 				/>
 			)}
 		</div>

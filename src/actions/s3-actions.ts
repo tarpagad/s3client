@@ -232,3 +232,28 @@ export async function makePublic(bucket: string, key: string) {
 		};
 	}
 }
+
+export async function getFileContent(bucket: string, key: string) {
+	try {
+		const client = await getS3Client();
+		const response = await client.send(
+			new GetObjectCommand({
+				Bucket: bucket,
+				Key: key,
+			}),
+		);
+
+		if (!response.Body) {
+			throw new Error("Empty response body");
+		}
+
+		const content = await response.Body.transformToString();
+		return { content };
+	} catch (error: unknown) {
+		console.error("Failed to fetch file content:", error);
+		return {
+			error:
+				error instanceof Error ? error.message : "Failed to fetch file content",
+		};
+	}
+}

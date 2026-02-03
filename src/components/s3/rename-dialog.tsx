@@ -13,6 +13,7 @@ interface RenameDialogProps {
 	oldKey: string;
 	onClose: () => void;
 	onSuccess: () => void;
+	onOptimisticRename?: (oldKey: string, newKey: string) => void;
 }
 
 export function RenameDialog({
@@ -20,6 +21,7 @@ export function RenameDialog({
 	oldKey,
 	onClose,
 	onSuccess,
+	onOptimisticRename,
 }: RenameDialogProps) {
 	const [newKey, setNewKey] = useState(oldKey);
 	const [isRenaming, setIsRenaming] = useState(false);
@@ -31,6 +33,10 @@ export function RenameDialog({
 		}
 
 		setIsRenaming(true);
+		if (onOptimisticRename) {
+			onOptimisticRename(oldKey, newKey);
+		}
+
 		try {
 			const result = await renameObject(bucketName, oldKey, newKey);
 			if (result.success) {
@@ -38,6 +44,9 @@ export function RenameDialog({
 				onSuccess();
 				onClose();
 			} else {
+				if (onOptimisticRename) {
+					onOptimisticRename(newKey, oldKey); // Quick rollback
+				}
 				toast.error(result.error || "Failed to rename");
 			}
 		} catch (_error) {

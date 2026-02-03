@@ -25,6 +25,7 @@ import type { S3ObjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Breadcrumbs } from "./breadcrumbs";
 import { ObjectActions } from "./object-actions";
+import { PreviewModal } from "./preview-modal";
 import { UploadZone } from "./upload-zone";
 
 interface FileExplorerProps {
@@ -42,6 +43,7 @@ export function FileExplorer({
 	const [searchQuery, setSearchQuery] = useState("");
 	const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 	const [showUpload, setShowUpload] = useState(false);
+	const [previewObject, setPreviewObject] = useState<S3ObjectInfo | null>(null);
 
 	const getFileIcon = (obj: S3ObjectInfo) => {
 		if (obj.type === "folder")
@@ -118,6 +120,12 @@ export function FileExplorer({
 		}
 	}
 
+	function handlePreview(obj: S3ObjectInfo) {
+		if (obj.type === "file") {
+			setPreviewObject(obj);
+		}
+	}
+
 	const filteredObjects = objects.filter((obj) =>
 		obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
 	);
@@ -133,13 +141,30 @@ export function FileExplorer({
 	async function handleDelete(key: string) {
 		if (!confirm("Are you sure you want to delete this?")) return;
 
+		// Optimistic update
+		const previousObjects = [...objects];
+		setObjects(objects.filter((obj) => obj.key !== key));
+
 		const result = await deleteObject(bucketName, key);
 		if (result.success) {
 			toast.success("Deleted successfully");
-			fetchObjects(prefix);
 		} else {
+			setObjects(previousObjects); // Rollback
 			toast.error(result.error || "Failed to delete");
 		}
+	}
+
+	function handleOptimisticRename(oldKey: string, newKey: string) {
+		setObjects(
+			objects.map((obj) => {
+				if (obj.key === oldKey) {
+					const name = newKey.split("/").pop() || "";
+					const extension = name.split(".").pop();
+					return { ...obj, key: newKey, name, extension };
+				}
+				return obj;
+			}),
+		);
 	}
 
 	return (
@@ -258,7 +283,13 @@ export function FileExplorer({
 														{obj.name}
 													</button>
 												) : (
-													<span className="font-medium">{obj.name}</span>
+													<button
+														onClick={() => handlePreview(obj)}
+														className="font-medium hover:underline text-left cursor-pointer"
+														type="button"
+													>
+														{obj.name}
+													</button>
 												)}
 											</div>
 										</td>
@@ -294,6 +325,7 @@ export function FileExplorer({
 													object={obj}
 													onRefresh={() => fetchObjects(prefix)}
 													onDelete={handleDelete}
+													onRename={handleOptimisticRename}
 												/>
 											</div>
 										</td>
@@ -343,6 +375,7 @@ export function FileExplorer({
 												object={obj}
 												onRefresh={() => fetchObjects(prefix)}
 												onDelete={handleDelete}
+												onRename={handleOptimisticRename}
 											/>
 										</div>
 									</div>
@@ -352,6 +385,14 @@ export function FileExplorer({
 					</div>
 				)}
 			</div>
+
+			{previewObject && (
+				<PreviewModal
+					bucketName={bucketName}
+					object={previewObject}
+					onClose={() => setPreviewObject(null)}
+				/>
+			)}
 		</div>
 	);
 }
