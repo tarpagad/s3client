@@ -16,7 +16,7 @@ export default function Home() {
 					</div>
 					<nav className="flex items-center gap-6">
 						<a
-							href="https://github.com/jean/s3client"
+							href="https://github.com/tarpagad/s3client"
 							className="text-sm font-medium hover:text-primary transition-colors"
 						>
 							GitHub
