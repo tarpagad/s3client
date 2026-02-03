@@ -1,7 +1,6 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { decrypt, encrypt } from "@/lib/encryption";
 import { type S3Credentials, s3CredentialsSchema } from "@/lib/types";
 
@@ -12,7 +11,7 @@ const ENCRYPTION_KEY =
 export async function saveS3Credentials(data: S3Credentials) {
 	const result = s3CredentialsSchema.safeParse(data);
 	if (!result.success) {
-		return { error: result.error.errors[0].message };
+		return { error: result.error.issues[0].message };
 	}
 
 	try {
