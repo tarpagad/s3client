@@ -280,6 +280,122 @@ export async function getFileContent(bucket: string, key: string) {
 		};
 	}
 }
+/**
+ * Performs a server-side search for objects within a specific prefix.
+ * Matches both folders and files.
+ */
+export async function searchObjects(
+	bucket: string,
+	prefix: string,
+	query: string,
+): Promise<ListObjectsResponse> {
+	if (!query.trim()) {
+		return listObjects(bucket, prefix);
+	}
+
+	try {
+		const client = await getS3Client();
+		const allFolders: S3ObjectInfo[] = [];
+		const allFiles: {
+			Key: string;
+			LastModified?: Date;
+			Size?: number;
+			ETag?: string;
+		}[] = [];
+		let continuationToken: string | undefined;
+
+		const lowerQuery = query.toLowerCase();
+
+		// Step 1: Accumulate all matches across all pages
+		do {
+			const response = await client.send(
+				new ListObjectsV2Command({
+					Bucket: bucket,
+					Prefix: prefix,
+					Delimiter: "/",
+					ContinuationToken: continuationToken,
+				}),
+			);
+
+			// Match folders
+			const folders: S3ObjectInfo[] = (response.CommonPrefixes || [])
+				.map((p) => {
+					const prefixStr = p.Prefix ?? "";
+					const name = prefixStr.slice(0, -1).split("/").pop() || "";
+					return { key: prefixStr, name, type: "folder" as const };
+				})
+				.filter((f) => f.name.toLowerCase().includes(lowerQuery));
+
+			allFolders.push(...folders);
+
+			// Match files
+			const files = (response.Contents || [])
+				.filter((c) => {
+					if (c.Key === prefix) return false;
+					const name = c.Key?.split("/").pop() || "";
+					return name.toLowerCase().includes(lowerQuery);
+				})
+				.map((c) => ({
+					Key: c.Key || "",
+					LastModified: c.LastModified,
+					Size: c.Size,
+					ETag: c.ETag,
+				}));
+
+			allFiles.push(...files);
+			continuationToken = response.NextContinuationToken;
+		} while (continuationToken);
+
+		// Step 2: Batch ACL checks for MATCHED files (limit search results to 100 for safety)
+		const matchedFilesToProcess = allFiles.slice(0, 100);
+		const batchSize = 10;
+		const finalFiles: S3ObjectInfo[] = [];
+
+		for (let i = 0; i < matchedFilesToProcess.length; i += batchSize) {
+			const batch = matchedFilesToProcess.slice(i, i + batchSize);
+			const batchResults = await Promise.all(
+				batch.map(async (content) => {
+					const key = content.Key;
+					const name = key.split("/").pop() || "";
+					const extension = name.split(".").pop();
+
+					let isPublic = false;
+					try {
+						const acl = await client.send(
+							new GetObjectAclCommand({ Bucket: bucket, Key: key }),
+						);
+						isPublic = (acl.Grants || []).some(
+							(grant) =>
+								grant.Grantee?.URI ===
+									"http://acs.amazonaws.com/groups/global/AllUsers" &&
+								grant.Permission === "READ",
+						);
+					} catch (_e) {}
+
+					return {
+						key,
+						name,
+						lastModified: content.LastModified,
+						size: content.Size,
+						etag: content.ETag,
+						type: "file" as const,
+						extension,
+						isPublic,
+					};
+				}),
+			);
+			finalFiles.push(...batchResults);
+		}
+
+		return {
+			objects: [...allFolders, ...finalFiles],
+			totalObjects: allFolders.length + finalFiles.length,
+		};
+	} catch (error: unknown) {
+		console.error("Search failed:", error);
+		throw new Error(error instanceof Error ? error.message : "Search failed");
+	}
+}
 
 /**
  * Counts the total number of items in a specific prefix (folder).

@@ -19,7 +19,12 @@ import {
 } from "lucide-react";
 import React, { useState } from "react";
 import { toast } from "sonner";
-import { countObjects, deleteObject, listObjects } from "@/actions/s3-actions";
+import {
+	countObjects,
+	deleteObject,
+	listObjects,
+	searchObjects,
+} from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,6 +75,7 @@ export function FileExplorer({
 	const [tokenCache, setTokenCache] = useState<(string | undefined)[]>([
 		undefined,
 	]); // Page 1 is always undefined token
+	const [isSearching, setIsSearching] = useState(false);
 
 	const getFileIcon = (obj: S3ObjectInfo) => {
 		if (obj.type === "folder")
@@ -163,6 +169,7 @@ export function FileExplorer({
 					return next;
 				});
 			}
+			setIsSearching(false);
 		} catch (error: unknown) {
 			toast.error(
 				error instanceof Error ? error.message : "Failed to load objects",
@@ -233,15 +240,37 @@ export function FileExplorer({
 		}
 	}
 
+	async function handleSearchExecute() {
+		if (!searchQuery.trim()) {
+			fetchObjects(prefix);
+			return;
+		}
+
+		setLoading(true);
+		setIsSearching(true);
+		try {
+			const data = await searchObjects(bucketName, prefix, searchQuery);
+			setObjects(data.objects);
+			setNextToken(undefined); // Search results are currently flat/unpaginated in this impl
+			setTotalItems(data.totalObjects ?? data.objects.length);
+		} catch (error: unknown) {
+			toast.error(error instanceof Error ? error.message : "Search failed");
+		} finally {
+			setLoading(false);
+		}
+	}
+
 	function handlePreview(obj: S3ObjectInfo) {
 		if (obj.type === "file") {
 			setPreviewObject(obj);
 		}
 	}
 
-	const filteredObjects = objects.filter((obj) =>
-		obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
-	);
+	const filteredObjects = isSearching
+		? objects
+		: objects.filter((obj) =>
+				obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
+			);
 
 	// Sort items
 	const sortedObjects = [...filteredObjects].sort((a, b) => {
@@ -325,12 +354,39 @@ export function FileExplorer({
 					<div className="relative w-full md:w-64">
 						<Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
 						<Input
-							placeholder="Search files..."
+							placeholder="Search in this folder..."
 							className="pl-9 h-9"
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") handleSearchExecute();
+							}}
 						/>
+						{isSearching && (
+							<Button
+								variant="ghost"
+								size="sm"
+								className="absolute right-1 top-1 h-7 w-7 p-0"
+								onClick={() => {
+									setSearchQuery("");
+									fetchObjects(prefix);
+								}}
+								type="button"
+							>
+								<Plus className="rotate-45" size={14} />
+							</Button>
+						)}
 					</div>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-9 w-9 shrink-0"
+						onClick={handleSearchExecute}
+						type="button"
+						disabled={loading}
+					>
+						<Search size={16} />
+					</Button>
 					<div className="flex border rounded-lg overflow-hidden shrink-0">
 						<Button
 							variant={viewMode === "list" ? "secondary" : "ghost"}
@@ -532,96 +588,132 @@ export function FileExplorer({
 			</div>
 
 			{/* Pagination Controls */}
-			{(nextToken || currentPage > 1 || totalItems) && (
+			{(nextToken || currentPage > 1 || totalItems || isSearching) && (
 				<div className="flex items-center justify-between px-2 py-4 border-t border-border/40">
 					<div className="text-sm text-muted-foreground">
-						Page{" "}
-						<span className="font-medium text-foreground">{currentPage}</span>
-						{totalItems && (
-							<>
-								{" "}
-								of{" "}
-								<span className="font-medium text-foreground">
-									{Math.ceil(totalItems / initialPrefs.itemsPerPage)}
+						{isSearching ? (
+							<span className="flex items-center gap-2">
+								<Search size={14} className="text-primary" />
+								Search results for{" "}
+								<span className="font-medium text-foreground italic">
+									"{searchQuery}"
 								</span>
+								<span className="text-xs">({objects.length} found)</span>
+							</span>
+						) : (
+							<>
+								Page{" "}
+								<span className="font-medium text-foreground">
+									{currentPage}
+								</span>
+								{totalItems && (
+									<>
+										{" "}
+										of{" "}
+										<span className="font-medium text-foreground">
+											{Math.ceil(totalItems / initialPrefs.itemsPerPage)}
+										</span>
+									</>
+								)}
 							</>
 						)}
 					</div>
 					<div className="flex items-center gap-2">
-						<select
-							value={sortBy}
-							onChange={(e) =>
-								setSortBy(
-									e.target.value as
-										| "date-desc"
-										| "date-asc"
-										| "name-asc"
-										| "name-desc"
-										| "type-folder"
-										| "type-file",
-								)
-							}
-							className="h-8 text-xs rounded-md border border-input bg-background px-2 py-1 outline-none mr-4"
-						>
-							<option value="date-desc">Newest First</option>
-							<option value="date-asc">Oldest First</option>
-							<option value="name-asc">Name (A-Z)</option>
-							<option value="name-desc">Name (Z-A)</option>
-							<option value="type-folder">Folders First</option>
-							<option value="type-file">Files First</option>
-						</select>
+						{!isSearching && (
+							<>
+								<select
+									value={sortBy}
+									onChange={(e) =>
+										setSortBy(
+											e.target.value as
+												| "date-desc"
+												| "date-asc"
+												| "name-asc"
+												| "name-desc"
+												| "type-folder"
+												| "type-file",
+										)
+									}
+									className="h-8 text-xs rounded-md border border-input bg-background px-2 py-1 outline-none mr-4"
+								>
+									<option value="date-desc">Newest First</option>
+									<option value="date-asc">Oldest First</option>
+									<option value="name-asc">Name (A-Z)</option>
+									<option value="name-desc">Name (Z-A)</option>
+									<option value="type-folder">Folders First</option>
+									<option value="type-file">Files First</option>
+								</select>
 
-						<div className="flex items-center gap-1 mr-4">
-							{totalItems &&
-								Array.from(
-									{ length: Math.ceil(totalItems / initialPrefs.itemsPerPage) },
-									(_, i) => i + 1,
-								)
-									.filter(
-										(p) =>
-											p === 1 ||
-											p ===
-												Math.ceil(
-													(totalItems || 0) / initialPrefs.itemsPerPage,
-												) ||
-											Math.abs(p - currentPage) <= 1,
-									)
-									.map((p, i, arr) => (
-										<React.Fragment key={p}>
-											{i > 0 && arr[i - 1] !== p - 1 && (
-												<span className="px-1">...</span>
-											)}
-											<Button
-												variant={currentPage === p ? "default" : "ghost"}
-												size="sm"
-												onClick={() => jumpToPage(p)}
-												className="h-8 w-8 p-0"
-												disabled={loading}
-											>
-												{p}
-											</Button>
-										</React.Fragment>
-									))}
-						</div>
+								<div className="flex items-center gap-1 mr-4">
+									{totalItems &&
+										Array.from(
+											{
+												length: Math.ceil(
+													totalItems / initialPrefs.itemsPerPage,
+												),
+											},
+											(_, i) => i + 1,
+										)
+											.filter(
+												(p) =>
+													p === 1 ||
+													p ===
+														Math.ceil(
+															(totalItems || 0) / initialPrefs.itemsPerPage,
+														) ||
+													Math.abs(p - currentPage) <= 1,
+											)
+											.map((p, i, arr) => (
+												<React.Fragment key={p}>
+													{i > 0 && arr[i - 1] !== p - 1 && (
+														<span className="px-1">...</span>
+													)}
+													<Button
+														variant={currentPage === p ? "default" : "ghost"}
+														size="sm"
+														onClick={() => jumpToPage(p)}
+														className="h-8 w-8 p-0"
+														disabled={loading}
+													>
+														{p}
+													</Button>
+												</React.Fragment>
+											))}
+								</div>
 
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={handlePrevPage}
-							disabled={currentPage === 1 || loading}
-							className="h-8 gap-1"
-						>
-							<ChevronLeft size={16} /> Previous
-						</Button>
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={handleNextPage}
-							disabled={!nextToken || loading}
-							className="h-8 gap-1"
-						>
-							Next <ChevronRight size={16} />
-						</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={handlePrevPage}
+									disabled={currentPage === 1 || loading}
+									className="h-8 gap-1"
+								>
+									<ChevronLeft size={16} /> Previous
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={handleNextPage}
+									disabled={!nextToken || loading}
+									className="h-8 gap-1"
+								>
+									Next <ChevronRight size={16} />
+								</Button>
+							</>
+						)}
+						{isSearching && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => {
+									setSearchQuery("");
+									fetchObjects(prefix);
+								}}
+								className="h-8"
+							>
+								Clear Search
+							</Button>
+						)}
 					</div>
 				</div>
 			)}
