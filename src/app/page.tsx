@@ -1,4 +1,5 @@
 import { Cloud, Shield, Zap } from "lucide-react";
+import Link from "next/link";
 import { ConnectForm } from "@/components/s3/connect-form";
 
 export default function Home() {
@@ -74,16 +75,22 @@ export default function Home() {
 			<footer className="border-t border-border/40 py-8 bg-background/50">
 				<div className="container flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
 					<p className="text-sm text-muted-foreground">
-						&copy; {new Date().getFullYear()} S3 Client. Built with Next.js,
-						Cloudflare, and Better-Auth.
+						&copy; {new Date().getFullYear()} S3 Client. Built with Next.js and
+						Cloudflare.
 					</p>
 					<div className="flex items-center gap-4 text-sm text-muted-foreground">
-						<a href="#" className="hover:text-primary transition-colors">
+						<Link
+							href="/privacy"
+							className="hover:text-primary transition-colors"
+						>
 							Privacy
-						</a>
-						<a href="#" className="hover:text-primary transition-colors">
+						</Link>
+						<Link
+							href="/terms"
+							className="hover:text-primary transition-colors"
+						>
 							Terms
-						</a>
+						</Link>
 					</div>
 				</div>
 			</footer>
