@@ -6,8 +6,7 @@ A high-performance, secure, and beautiful web-based S3 client built with Next.js
 
 ### 🔐 Security First
 - **AES-GCM Encryption**: AWS credentials are encrypted at rest using industry-standard AES-256-GCM.
-- **Secure Sessions**: Integrated with **Better-Auth** for robust user authentication (Email/Password & Social).
-- **Stateless Architecture**: Credentials are stored in secure, HTTP-only cookies, ensuring your keys never touch our persistent storage.
+- **Stateless Architecture**: Credentials are stored in secure, HTTP-only cookies, ensuring your keys never touch our persistent storage. No database registration required.
 
 ### 📁 Advanced File Explorer
 - **Native Experience**: Breadcrumb navigation, folder simulation, and rich file-type icons.
@@ -36,7 +35,6 @@ A high-performance, secure, and beautiful web-based S3 client built with Next.js
 - **Framework**: Next.js (App Router)
 - **Runtime**: Cloudflare Workers / Pages
 - **Styling**: Tailwind CSS
-- **Authentication**: Better-Auth
 - **S3 Interaction**: AWS S3 SDK v3
 - **Language**: TypeScript
 - **Package Manager**: Bun
@@ -51,15 +49,8 @@ A high-performance, secure, and beautiful web-based S3 client built with Next.js
 ### Environment Variables
 Create a `.env.local` file with the following:
 ```env
-# Better Auth
-BETTER_AUTH_SECRET=your_auth_secret
-BETTER_AUTH_URL=http://localhost:3000
-
 # Encryption
 ENCRYPTION_KEY=your_32_character_hex_key
-
-# Database (for Auth)
-DATABASE_URL=file:./dev.db
 ```
 
 ### Installation
