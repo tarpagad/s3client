@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { listObjects } from "@/actions/s3-actions";
 import { FileExplorer } from "@/components/s3/file-explorer";
 import { Button } from "@/components/ui/button";
+import { getUserPrefs } from "@/lib/preferences";
 import type { S3ObjectInfo } from "@/lib/types";
 
 interface BucketPageProps {
@@ -28,6 +29,8 @@ export default async function BucketPage({ params }: BucketPageProps) {
 		// or we could show an error card here.
 	}
 
+	const prefs = await getUserPrefs();
+
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center gap-4">
@@ -42,7 +45,11 @@ export default async function BucketPage({ params }: BucketPageProps) {
 				</div>
 			</div>
 
-			<FileExplorer bucketName={bucketName} initialObjects={initialObjects} />
+			<FileExplorer
+				bucketName={bucketName}
+				initialObjects={initialObjects}
+				initialPrefs={prefs}
+			/>
 		</div>
 	);
 }

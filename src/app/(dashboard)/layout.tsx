@@ -1,6 +1,8 @@
-import { Cloud, LayoutDashboard, LogOut, Search, Settings } from "lucide-react";
+import { Cloud, LogOut, Search } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getS3Credentials } from "@/actions/auth-actions";
+import { SidebarNav } from "@/components/s3/sidebar-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -29,20 +31,7 @@ export default async function DashboardLayout({
 				</div>
 
 				<nav className="flex-1 px-4 space-y-2">
-					<Button
-						variant="ghost"
-						className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground"
-					>
-						<LayoutDashboard size={18} />
-						Buckets
-					</Button>
-					<Button
-						variant="ghost"
-						className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground"
-					>
-						<Settings size={18} />
-						Settings
-					</Button>
+					<SidebarNav />
 				</nav>
 
 				<div className="p-4 border-t border-border/40">

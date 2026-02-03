@@ -1,6 +1,8 @@
 "use client";
 
 import {
+	ChevronLeft,
+	ChevronRight,
 	CloudUpload,
 	Code2,
 	File,
@@ -21,6 +23,7 @@ import { deleteObject, listObjects } from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import type { UserPrefs } from "@/lib/preferences";
 import type { S3ObjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Breadcrumbs } from "./breadcrumbs";
@@ -31,19 +34,24 @@ import { UploadZone } from "./upload-zone";
 interface FileExplorerProps {
 	bucketName: string;
 	initialObjects: S3ObjectInfo[];
+	initialPrefs: UserPrefs;
 }
 
 export function FileExplorer({
 	bucketName,
 	initialObjects,
+	initialPrefs,
 }: FileExplorerProps) {
 	const [prefix, setPrefix] = useState("");
 	const [objects, setObjects] = useState<S3ObjectInfo[]>(initialObjects);
 	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+	const [viewMode, setViewMode] = useState<"list" | "grid">(
+		initialPrefs.viewMode,
+	);
 	const [showUpload, setShowUpload] = useState(false);
 	const [previewObject, setPreviewObject] = useState<S3ObjectInfo | null>(null);
+	const [currentPage, setCurrentPage] = useState(1);
 
 	const getFileIcon = (obj: S3ObjectInfo) => {
 		if (obj.type === "folder")
@@ -111,6 +119,7 @@ export function FileExplorer({
 			const data = await listObjects(bucketName, newPrefix);
 			setObjects(data);
 			setPrefix(newPrefix);
+			setCurrentPage(1); // Reset to page 1 on folder change
 		} catch (error: unknown) {
 			toast.error(
 				error instanceof Error ? error.message : "Failed to load objects",
@@ -128,6 +137,14 @@ export function FileExplorer({
 
 	const filteredObjects = objects.filter((obj) =>
 		obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
+	);
+
+	const totalPages = Math.ceil(
+		filteredObjects.length / initialPrefs.itemsPerPage,
+	);
+	const paginatedObjects = filteredObjects.slice(
+		(currentPage - 1) * initialPrefs.itemsPerPage,
+		currentPage * initialPrefs.itemsPerPage,
 	);
 
 	const formatSize = (bytes?: number) => {
@@ -266,7 +283,7 @@ export function FileExplorer({
 										</td>
 									</tr>
 								)}
-								{filteredObjects.map((obj) => (
+								{paginatedObjects.map((obj) => (
 									<tr
 										key={obj.key}
 										className="hover:bg-muted/30 transition-colors group"
@@ -336,7 +353,7 @@ export function FileExplorer({
 					</div>
 				) : (
 					<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-						{filteredObjects.map((obj) => (
+						{paginatedObjects.map((obj) => (
 							<Card
 								key={obj.key}
 								className={cn(
@@ -385,6 +402,64 @@ export function FileExplorer({
 					</div>
 				)}
 			</div>
+
+			{/* Pagination Controls */}
+			{totalPages > 1 && (
+				<div className="flex items-center justify-between px-2 py-4 border-t border-border/40">
+					<div className="text-sm text-muted-foreground">
+						Showing{" "}
+						<span className="font-medium">
+							{(currentPage - 1) * initialPrefs.itemsPerPage + 1}
+						</span>{" "}
+						to{" "}
+						<span className="font-medium">
+							{Math.min(
+								currentPage * initialPrefs.itemsPerPage,
+								filteredObjects.length,
+							)}
+						</span>{" "}
+						of <span className="font-medium">{filteredObjects.length}</span>{" "}
+						results
+					</div>
+					<div className="flex items-center gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+							disabled={currentPage === 1}
+							className="h-8 gap-1"
+						>
+							<ChevronLeft size={16} /> Previous
+						</Button>
+						<div className="flex items-center gap-1">
+							{Array.from({ length: totalPages }, (_, i) => i + 1).map(
+								(page) => (
+									<Button
+										key={page}
+										variant={currentPage === page ? "default" : "ghost"}
+										size="sm"
+										onClick={() => setCurrentPage(page)}
+										className="h-8 w-8 p-0"
+									>
+										{page}
+									</Button>
+								),
+							)}
+						</div>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() =>
+								setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+							}
+							disabled={currentPage === totalPages}
+							className="h-8 gap-1"
+						>
+							Next <ChevronRight size={16} />
+						</Button>
+					</div>
+				</div>
+			)}
 
 			{previewObject && (
 				<PreviewModal
