@@ -4,7 +4,6 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { z } from "zod";
 import { saveS3Credentials } from "@/actions/auth-actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +51,7 @@ export function ConnectForm() {
 				router.refresh();
 				router.push("/dashboard"); // Redirect to dashboard
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error("Something went wrong. Please try again.");
 		} finally {
 			setLoading(false);

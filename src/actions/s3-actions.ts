@@ -280,3 +280,42 @@ export async function getFileContent(bucket: string, key: string) {
 		};
 	}
 }
+
+/**
+ * Counts the total number of items in a specific prefix (folder).
+ * This is optimized for speed by not fetching ACLs or metadata.
+ */
+export async function countObjects(
+	bucket: string,
+	prefix: string = "",
+): Promise<{ count: number }> {
+	try {
+		const client = await getS3Client();
+		let totalCount = 0;
+		let continuationToken: string | undefined;
+
+		do {
+			const response = await client.send(
+				new ListObjectsV2Command({
+					Bucket: bucket,
+					Prefix: prefix,
+					Delimiter: "/",
+					ContinuationToken: continuationToken,
+					MaxKeys: 1000, // Fetch in large chunks for counting
+				}),
+			);
+
+			totalCount += response.CommonPrefixes?.length || 0;
+			// We only count files that aren't the prefix itself
+			const files = (response.Contents || []).filter((c) => c.Key !== prefix);
+			totalCount += files.length;
+
+			continuationToken = response.NextContinuationToken;
+		} while (continuationToken);
+
+		return { count: totalCount };
+	} catch (error: unknown) {
+		console.error("Failed to count objects:", error);
+		return { count: 0 };
+	}
+}

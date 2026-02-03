@@ -17,9 +17,9 @@ import {
 	Search,
 	Video,
 } from "lucide-react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { toast } from "sonner";
-import { deleteObject, listObjects } from "@/actions/s3-actions";
+import { countObjects, deleteObject, listObjects } from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -58,7 +58,18 @@ export function FileExplorer({
 	);
 	const [prevTokens, setPrevTokens] = useState<string[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
-	const [sortBy, setSortBy] = useState<"date-desc" | "date-asc">("date-desc");
+	const [sortBy, setSortBy] = useState<
+		| "date-desc"
+		| "date-asc"
+		| "name-asc"
+		| "name-desc"
+		| "type-folder"
+		| "type-file"
+	>("date-desc");
+	const [totalItems, setTotalItems] = useState<number | null>(null);
+	const [tokenCache, setTokenCache] = useState<(string | undefined)[]>([
+		undefined,
+	]); // Page 1 is always undefined token
 
 	const getFileIcon = (obj: S3ObjectInfo) => {
 		if (obj.type === "folder")
@@ -132,9 +143,25 @@ export function FileExplorer({
 			setObjects(data.objects);
 			setNextToken(data.nextToken);
 			setPrefix(newPrefix);
+
 			if (!token) {
 				setPrevTokens([]);
 				setCurrentPage(1);
+				setTokenCache([undefined]);
+				// Fetch total count in background
+				countObjects(bucketName, newPrefix).then((res) =>
+					setTotalItems(res.count),
+				);
+			}
+
+			// Update token cache for the NEXT page
+			if (data.nextToken) {
+				setTokenCache((prev) => {
+					const next = [...prev];
+					const nextPageIndex = currentPage; // current page is token index - 1
+					next[nextPageIndex] = data.nextToken;
+					return next;
+				});
 			}
 		} catch (error: unknown) {
 			toast.error(
@@ -162,6 +189,50 @@ export function FileExplorer({
 		setCurrentPage(currentPage - 1);
 	}
 
+	async function jumpToPage(page: number) {
+		if (page === currentPage || page < 1) return;
+		if (totalItems && page > Math.ceil(totalItems / initialPrefs.itemsPerPage))
+			return;
+
+		// If we have the token in cache, use it
+		if (page <= tokenCache.length) {
+			const token = tokenCache[page - 1];
+			// Correct prevTokens history
+			const newPrevTokens = [];
+			for (let i = 1; i < page; i++) {
+				newPrevTokens.push(tokenCache[i]);
+			}
+			setPrevTokens(newPrevTokens as string[]);
+			await fetchObjects(prefix, token);
+			setCurrentPage(page);
+		} else {
+			// Sequential discovery: Jump to last known and then next until reached
+			// (For simplicity in this premium UX, we'll notify the user or just block)
+			toast.info(`Fetching page ${page}...`);
+			let currentDiscoPage = tokenCache.length;
+			let currentToken = tokenCache[currentDiscoPage - 1];
+
+			while (currentDiscoPage < page) {
+				const data = await listObjects(
+					bucketName,
+					prefix,
+					initialPrefs.itemsPerPage,
+					currentToken,
+				);
+				currentToken = data.nextToken;
+				if (!currentToken && currentDiscoPage < page - 1) break; // End of results
+				currentDiscoPage++;
+				// Cache discovered tokens
+				setTokenCache((prev) => {
+					const next = [...prev];
+					next[currentDiscoPage - 1] = currentToken;
+					return next;
+				});
+			}
+			await jumpToPage(page);
+		}
+	}
+
 	function handlePreview(obj: S3ObjectInfo) {
 		if (obj.type === "file") {
 			setPreviewObject(obj);
@@ -174,13 +245,34 @@ export function FileExplorer({
 
 	// Sort items
 	const sortedObjects = [...filteredObjects].sort((a, b) => {
-		if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+		// If sorting by type, we handle it specifically
+		if (sortBy === "type-folder") {
+			if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+		} else if (sortBy === "type-file") {
+			if (a.type !== b.type) return a.type === "file" ? -1 : 1;
+		} else {
+			// For all other sorts, folders always come first
+			if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+		}
+
+		// Secondary sort logic
 		if (sortBy === "date-desc") {
 			return (
 				(b.lastModified?.getTime() || 0) - (a.lastModified?.getTime() || 0)
 			);
 		}
-		return (a.lastModified?.getTime() || 0) - (b.lastModified?.getTime() || 0);
+		if (sortBy === "date-asc") {
+			return (
+				(a.lastModified?.getTime() || 0) - (b.lastModified?.getTime() || 0)
+			);
+		}
+		if (sortBy === "name-asc") {
+			return a.name.localeCompare(b.name);
+		}
+		if (sortBy === "name-desc") {
+			return b.name.localeCompare(a.name);
+		}
+		return 0;
 	});
 
 	const formatSize = (bytes?: number) => {
@@ -440,23 +532,77 @@ export function FileExplorer({
 			</div>
 
 			{/* Pagination Controls */}
-			{(nextToken || currentPage > 1) && (
+			{(nextToken || currentPage > 1 || totalItems) && (
 				<div className="flex items-center justify-between px-2 py-4 border-t border-border/40">
 					<div className="text-sm text-muted-foreground">
 						Page{" "}
 						<span className="font-medium text-foreground">{currentPage}</span>
+						{totalItems && (
+							<>
+								{" "}
+								of{" "}
+								<span className="font-medium text-foreground">
+									{Math.ceil(totalItems / initialPrefs.itemsPerPage)}
+								</span>
+							</>
+						)}
 					</div>
 					<div className="flex items-center gap-2">
 						<select
 							value={sortBy}
 							onChange={(e) =>
-								setSortBy(e.target.value as "date-desc" | "date-asc")
+								setSortBy(
+									e.target.value as
+										| "date-desc"
+										| "date-asc"
+										| "name-asc"
+										| "name-desc"
+										| "type-folder"
+										| "type-file",
+								)
 							}
 							className="h-8 text-xs rounded-md border border-input bg-background px-2 py-1 outline-none mr-4"
 						>
 							<option value="date-desc">Newest First</option>
 							<option value="date-asc">Oldest First</option>
+							<option value="name-asc">Name (A-Z)</option>
+							<option value="name-desc">Name (Z-A)</option>
+							<option value="type-folder">Folders First</option>
+							<option value="type-file">Files First</option>
 						</select>
+
+						<div className="flex items-center gap-1 mr-4">
+							{totalItems &&
+								Array.from(
+									{ length: Math.ceil(totalItems / initialPrefs.itemsPerPage) },
+									(_, i) => i + 1,
+								)
+									.filter(
+										(p) =>
+											p === 1 ||
+											p ===
+												Math.ceil(
+													(totalItems || 0) / initialPrefs.itemsPerPage,
+												) ||
+											Math.abs(p - currentPage) <= 1,
+									)
+									.map((p, i, arr) => (
+										<React.Fragment key={p}>
+											{i > 0 && arr[i - 1] !== p - 1 && (
+												<span className="px-1">...</span>
+											)}
+											<Button
+												variant={currentPage === p ? "default" : "ghost"}
+												size="sm"
+												onClick={() => jumpToPage(p)}
+												className="h-8 w-8 p-0"
+												disabled={loading}
+											>
+												{p}
+											</Button>
+										</React.Fragment>
+									))}
+						</div>
 
 						<Button
 							variant="outline"
