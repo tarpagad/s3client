@@ -218,7 +218,7 @@ export function FileExplorer({
 				)}
 
 				{viewMode === "list" ? (
-					<div className="border rounded-xl overflow-hidden bg-card/30">
+					<div className="border rounded-xl bg-card/30">
 						<table className="w-full text-sm text-left">
 							<thead className="bg-muted/50 text-muted-foreground font-medium border-b">
 								<tr>

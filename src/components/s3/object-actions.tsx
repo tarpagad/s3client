@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { getDownloadUrl, makePublic } from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
 import type { S3ObjectInfo } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { RenameDialog } from "./rename-dialog";
 
 interface ObjectActionsProps {
@@ -29,8 +30,10 @@ export function ObjectActions({
 	onDelete,
 }: ObjectActionsProps) {
 	const [isOpen, setIsOpen] = useState(false);
+	const [openUp, setOpenUp] = useState(false);
 	const [showRename, setShowRename] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
+	const buttonRef = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
 		function handleClickOutside(event: MouseEvent) {
@@ -41,6 +44,15 @@ export function ObjectActions({
 		document.addEventListener("mousedown", handleClickOutside);
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
+
+	useEffect(() => {
+		if (isOpen && buttonRef.current) {
+			const rect = buttonRef.current.getBoundingClientRect();
+			const spaceBelow = window.innerHeight - rect.bottom;
+			// If less than 250px below, open upwards
+			setOpenUp(spaceBelow < 250);
+		}
+	}, [isOpen]);
 
 	async function handleDownload() {
 		setIsOpen(false);
@@ -81,6 +93,7 @@ export function ObjectActions({
 	return (
 		<div className="relative" ref={menuRef}>
 			<Button
+				ref={buttonRef}
 				variant="ghost"
 				size="icon"
 				className="h-8 w-8"
@@ -94,7 +107,14 @@ export function ObjectActions({
 			</Button>
 
 			{isOpen && (
-				<div className="absolute right-0 mt-2 w-48 bg-card border border-border/40 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+				<div
+					className={cn(
+						"absolute right-0 w-48 bg-card border border-border/40 rounded-xl shadow-xl z-1000 py-1 overflow-hidden animate-in fade-in duration-150",
+						openUp
+							? "bottom-full mb-2 slide-in-from-bottom-2"
+							: "top-full mt-2 slide-in-from-top-2",
+					)}
+				>
 					{object.type === "file" && (
 						<button
 							type="button"
