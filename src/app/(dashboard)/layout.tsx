@@ -1,9 +1,9 @@
-import { Cloud, LogOut, Search } from "lucide-react";
+import { Cloud, Search } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getS3Credentials } from "@/actions/auth-actions";
+import { DisconnectButton } from "@/components/s3/disconnect-button";
 import { SidebarNav } from "@/components/s3/sidebar-nav";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default async function DashboardLayout({
@@ -35,13 +35,7 @@ export default async function DashboardLayout({
 				</nav>
 
 				<div className="p-4 border-t border-border/40">
-					<Button
-						variant="ghost"
-						className="w-full justify-start gap-3 text-destructive hover:bg-destructive/10"
-					>
-						<LogOut size={18} />
-						Disconnect S3
-					</Button>
+					<DisconnectButton />
 				</div>
 			</aside>
 
