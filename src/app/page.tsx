@@ -1,51 +1,91 @@
-import Image from "next/image";
+import { Cloud, Shield, Zap } from "lucide-react";
+import { ConnectForm } from "@/components/s3/connect-form";
 
 export default function Home() {
 	return (
-		<div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-			<main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-				<Image className="dark:invert" src="/next.svg" alt="Next.js logo" width={180} height={38} priority />
-				<ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-					<li className="mb-2 tracking-[-.01em]">
-						Get started by editing{" "}
-						<code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-							src/app/page.tsx
-						</code>
-						.
-					</li>
-					<li className="tracking-[-.01em]">Save and see your changes instantly.</li>
-				</ol>
+		<div className="flex flex-col min-h-screen">
+			{/* Header */}
+			<header className="border-b border-border/40 backdrop-blur-md sticky top-0 z-50 bg-background/80">
+				<div className="container flex h-16 items-center justify-between">
+					<div className="flex items-center gap-2 font-bold text-xl tracking-tight">
+						<div className="bg-primary text-primary-foreground p-1 rounded">
+							<Cloud size={20} />
+						</div>
+						<span>S3 Client</span>
+					</div>
+					<nav className="flex items-center gap-6">
+						<a
+							href="https://github.com/jean/s3client"
+							className="text-sm font-medium hover:text-primary transition-colors"
+						>
+							GitHub
+						</a>
+					</nav>
+				</div>
+			</header>
 
-				<div className="flex gap-4 items-center flex-col sm:flex-row">
-					<a
-						className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-						href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Read our docs
-					</a>
+			<main className="flex-1 flex flex-col items-center justify-center p-6 md:p-24 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/5 via-background to-background">
+				<div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+					<div className="space-y-6">
+						<h1 className="text-4xl md:text-6xl font-extrabold tracking-tighter leading-tight">
+							Manage your S3 buckets{" "}
+							<span className="text-primary">securely</span> and{" "}
+							<span className="text-primary">statelessly</span>.
+						</h1>
+						<p className="text-muted-foreground text-lg md:text-xl max-w-[600px]">
+							A premium, lightweight web client for Amazon S3. No database, no
+							storage of your secrets. Everything stays in your browser's
+							encrypted cookies.
+						</p>
+
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+							<div className="flex items-start gap-3 p-4 rounded-xl border border-border/40 bg-card/50">
+								<Shield className="text-primary shrink-0" size={24} />
+								<div>
+									<h3 className="font-semibold text-sm">Military Grade</h3>
+									<p className="text-xs text-muted-foreground">
+										AES-256-GCM encryption for your AWS credentials.
+									</p>
+								</div>
+							</div>
+							<div className="flex items-start gap-3 p-4 rounded-xl border border-border/40 bg-card/50">
+								<Zap className="text-primary shrink-0" size={24} />
+								<div>
+									<h3 className="font-semibold text-sm">Ultra Fast</h3>
+									<p className="text-xs text-muted-foreground">
+										Built on Next.js and Cloudflare Workers for global
+										performance.
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div className="relative group">
+						<div className="absolute -inset-1 bg-linear-to-r from-primary to-primary/50 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+						<div className="relative">
+							<ConnectForm />
+						</div>
+					</div>
 				</div>
 			</main>
-			<footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-				<a
-					className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-					href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					<Image aria-hidden src="/file.svg" alt="File icon" width={16} height={16} />
-					Learn
-				</a>
-				<a
-					className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-					href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					<Image aria-hidden src="/globe.svg" alt="Globe icon" width={16} height={16} />
-					Go to nextjs.org →
-				</a>
+
+			{/* Footer */}
+			<footer className="border-t border-border/40 py-8 bg-background/50">
+				<div className="container flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
+					<p className="text-sm text-muted-foreground">
+						&copy; {new Date().getFullYear()} S3 Client. Built with Next.js,
+						Cloudflare, and Better-Auth.
+					</p>
+					<div className="flex items-center gap-4 text-sm text-muted-foreground">
+						<a href="#" className="hover:text-primary transition-colors">
+							Privacy
+						</a>
+						<a href="#" className="hover:text-primary transition-colors">
+							Terms
+						</a>
+					</div>
+				</div>
 			</footer>
 		</div>
 	);
