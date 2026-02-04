@@ -1,9 +1,9 @@
 import { Cloud, Search } from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getS3Credentials } from "@/actions/auth-actions";
 import { DisconnectButton } from "@/components/s3/disconnect-button";
 import { SidebarNav } from "@/components/s3/sidebar-nav";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Input } from "@/components/ui/input";
 
 export default async function DashboardLayout({
@@ -54,6 +54,7 @@ export default async function DashboardLayout({
 						</div>
 					</div>
 					<div className="flex items-center gap-4">
+						<ThemeToggle />
 						<div className="w-8 h-8 rounded-full bg-linear-to-br from-primary to-primary/50 flex items-center justify-center text-[10px] font-bold text-primary-foreground shadow-sm">
 							AWS
 						</div>
