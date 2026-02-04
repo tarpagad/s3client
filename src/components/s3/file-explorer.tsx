@@ -67,12 +67,7 @@ export function FileExplorer({
 	const [prevTokens, setPrevTokens] = useState<string[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [sortBy, setSortBy] = useState<
-		| "date-desc"
-		| "date-asc"
-		| "name-asc"
-		| "name-desc"
-		| "type-folder"
-		| "type-file"
+		"date-desc" | "date-asc" | "name-asc" | "name-desc"
 	>("date-desc");
 	const [totalItems, setTotalItems] = useState<number | null>(null);
 	const [tokenCache, setTokenCache] = useState<(string | undefined)[]>([
@@ -277,15 +272,8 @@ export function FileExplorer({
 
 	// Sort items
 	const sortedObjects = [...filteredObjects].sort((a, b) => {
-		// If sorting by type, we handle it specifically
-		if (sortBy === "type-folder") {
-			if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-		} else if (sortBy === "type-file") {
-			if (a.type !== b.type) return a.type === "file" ? -1 : 1;
-		} else {
-			// For all other sorts, folders always come first
-			if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-		}
+		// Folders always come first
+		if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
 
 		// Secondary sort logic
 		if (sortBy === "date-desc") {
@@ -641,9 +629,7 @@ export function FileExplorer({
 												| "date-desc"
 												| "date-asc"
 												| "name-asc"
-												| "name-desc"
-												| "type-folder"
-												| "type-file",
+												| "name-desc",
 										)
 									}
 									className="h-8 text-xs rounded-md border border-input bg-background px-2 py-1 outline-none mr-4"
@@ -652,8 +638,6 @@ export function FileExplorer({
 									<option value="date-asc">Oldest First</option>
 									<option value="name-asc">Name (A-Z)</option>
 									<option value="name-desc">Name (Z-A)</option>
-									<option value="type-folder">Folders First</option>
-									<option value="type-file">Files First</option>
 								</select>
 
 								<div className="flex items-center gap-1 mr-4">

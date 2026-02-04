@@ -19,6 +19,8 @@ export default async function DashboardPage() {
 
 	try {
 		buckets = await listBuckets();
+		// Sort buckets alphabetically by name
+		buckets.sort((a, b) => a.name.localeCompare(b.name));
 	} catch (err: unknown) {
 		error = err instanceof Error ? err.message : "An unknown error occurred";
 	}
