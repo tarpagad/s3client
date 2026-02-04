@@ -7,6 +7,7 @@ import {
 	Code2,
 	File,
 	Folder,
+	FolderPlus,
 	Grid,
 	Image as ImageIcon,
 	Link as LinkIcon,
@@ -32,6 +33,7 @@ import type { UserPrefs } from "@/lib/preferences";
 import type { S3ObjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Breadcrumbs } from "./breadcrumbs";
+import { CreateFolderDialog } from "./create-folder-dialog";
 import { ObjectActions } from "./object-actions";
 import { PreviewModal } from "./preview-modal";
 import { UploadZone } from "./upload-zone";
@@ -57,6 +59,7 @@ export function FileExplorer({
 		initialPrefs.viewMode,
 	);
 	const [showUpload, setShowUpload] = useState(false);
+	const [showCreateFolder, setShowCreateFolder] = useState(false);
 	const [previewObject, setPreviewObject] = useState<S3ObjectInfo | null>(null);
 	const [nextToken, setNextToken] = useState<string | undefined>(
 		initialNextToken,
@@ -420,6 +423,15 @@ export function FileExplorer({
 						)}
 						{showUpload ? "Close" : "Upload"}
 					</Button>
+					<Button
+						onClick={() => setShowCreateFolder(true)}
+						variant="outline"
+						className="gap-2 h-9 border-primary/20 hover:border-primary/50 hover:bg-primary/5 text-primary"
+						type="button"
+					>
+						<FolderPlus size={16} />
+						<span className="hidden sm:inline">New Folder</span>
+					</Button>
 				</div>
 			</div>
 
@@ -723,6 +735,15 @@ export function FileExplorer({
 					bucketName={bucketName}
 					object={previewObject}
 					onClose={() => setPreviewObject(null)}
+				/>
+			)}
+
+			{showCreateFolder && (
+				<CreateFolderDialog
+					bucketName={bucketName}
+					prefix={prefix}
+					onClose={() => setShowCreateFolder(false)}
+					onSuccess={() => fetchObjects(prefix)}
 				/>
 			)}
 		</div>

@@ -435,3 +435,64 @@ export async function countObjects(
 		return { count: 0 };
 	}
 }
+/**
+ * Creates a new folder (empty object with key ending in /)
+ * Checks for duplicates before creating.
+ */
+export async function createFolder(
+	bucket: string,
+	prefix: string,
+	folderName: string,
+) {
+	try {
+		// Basic validation
+		if (!folderName.trim()) {
+			throw new Error("Folder name cannot be empty");
+		}
+
+		// S3 Recommended safe naming: avoid characters like \ ^ ` > < { } [ ] # % ~ |
+		// And definitely no / in the name itself
+		const invalidChars = /[\\^`><{}[\]#%~|/]/;
+		if (invalidChars.test(folderName)) {
+			throw new Error(
+				"Folder name contains invalid characters (\\ ^ ` > < { } [ ] # % ~ | /)",
+			);
+		}
+
+		const client = await getS3Client();
+		const key = `${prefix}${folderName}/`;
+
+		// Duplicate check
+		const response = await client.send(
+			new ListObjectsV2Command({
+				Bucket: bucket,
+				Prefix: key,
+				Delimiter: "/",
+				MaxKeys: 1,
+			}),
+		);
+
+		if (
+			(response.Contents && response.Contents.length > 0) ||
+			(response.CommonPrefixes && response.CommonPrefixes.length > 0)
+		) {
+			throw new Error("A folder or file with this name already exists");
+		}
+
+		await client.send(
+			new PutObjectCommand({
+				Bucket: bucket,
+				Key: key,
+				Body: "",
+			}),
+		);
+
+		revalidatePath("/dashboard");
+		return { success: true };
+	} catch (error: unknown) {
+		console.error("Failed to create folder:", error);
+		return {
+			error: error instanceof Error ? error.message : "Failed to create folder",
+		};
+	}
+}
