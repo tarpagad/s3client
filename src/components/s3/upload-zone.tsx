@@ -1,6 +1,6 @@
 "use client";
 
-import { File as FileIcon, Loader2, Upload, X } from "lucide-react";
+import { File as FileIcon, Loader2, Upload, X, CheckCircle, AlertCircle } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { uploadFile } from "@/actions/s3-actions";
@@ -12,15 +12,34 @@ interface UploadZoneProps {
 	onSuccess: () => void;
 }
 
+interface FileStatus {
+	file: File;
+	status: "pending" | "uploading" | "success" | "error";
+	error?: string;
+}
+
 export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
-	const [isUploading, setIsUploading] = useState(false);
 	const [isDragActive, setIsDragActive] = useState(false);
-	const [selectedFile, setSelectedFile] = useState<File | null>(null);
+	const [files, setFiles] = useState<FileStatus[]>([]);
+	const [isUploading, setIsUploading] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
+	function addFiles(newFiles: File[]) {
+		const newFileStatuses = newFiles.map((file) => ({
+			file,
+			status: "pending" as const,
+		}));
+		setFiles((prev) => [...prev, ...newFileStatuses]);
+	}
+
 	function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-		const file = e.target.files?.[0];
-		if (file) setSelectedFile(file);
+		if (e.target.files && e.target.files.length > 0) {
+			addFiles(Array.from(e.target.files));
+		}
+		// Reset input value so same files can be selected again if needed
+		if (fileInputRef.current) {
+			fileInputRef.current.value = "";
+		}
 	}
 
 	function onDragOver(e: React.DragEvent) {
@@ -35,32 +54,77 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 	function onDrop(e: React.DragEvent) {
 		e.preventDefault();
 		setIsDragActive(false);
-		const file = e.dataTransfer.files?.[0];
-		if (file) setSelectedFile(file);
+		if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+			addFiles(Array.from(e.dataTransfer.files));
+		}
+	}
+
+	function removeFile(index: number) {
+		setFiles((prev) => prev.filter((_, i) => i !== index));
 	}
 
 	async function handleUpload() {
-		if (!selectedFile) return;
+		if (files.length === 0) return;
 
 		setIsUploading(true);
-		const formData = new FormData();
-		formData.append("file", selectedFile);
+		let successCount = 0;
+		let failCount = 0;
 
-		const key = prefix + selectedFile.name;
+		const uploadedFiles = [...files];
 
-		try {
-			const result = await uploadFile(bucketName, key, formData);
-			if (result.success) {
-				toast.success("File uploaded successfully");
-				setSelectedFile(null);
-				onSuccess();
-			} else {
-				toast.error(result.error || "Upload failed");
+		// Upload sequentially to avoid overwhelming server or hitting limits
+		for (let i = 0; i < uploadedFiles.length; i++) {
+			const fileStatus = uploadedFiles[i];
+			if (fileStatus.status === "success") continue; // Skip already uploaded
+
+			// Update status to uploading
+			uploadedFiles[i] = { ...fileStatus, status: "uploading" };
+			setFiles([...uploadedFiles]);
+
+			const formData = new FormData();
+			formData.append("file", fileStatus.file);
+			const key = prefix + fileStatus.file.name;
+
+			try {
+				const result = await uploadFile(bucketName, key, formData);
+				if (result.success) {
+					uploadedFiles[i] = { ...fileStatus, status: "success" };
+					successCount++;
+				} else {
+					uploadedFiles[i] = {
+						...fileStatus,
+						status: "error",
+						error: result.error || "Upload failed",
+					};
+					failCount++;
+				}
+			} catch (error) {
+				uploadedFiles[i] = {
+					...fileStatus,
+					status: "error",
+					error: "Network error",
+				};
+				failCount++;
 			}
-		} catch (_error) {
-			toast.error("An unexpected error occurred during upload");
-		} finally {
-			setIsUploading(false);
+			setFiles([...uploadedFiles]);
+		}
+
+		setIsUploading(false);
+
+		if (successCount > 0) {
+			toast.success(
+				`Uploaded ${successCount} file${successCount !== 1 ? "s" : ""}`,
+			);
+			onSuccess();
+			// Clear successful uploads after a delay? Or just keep them visible?
+			// For now, let's remove successful ones so user can see failures or upload more
+			setTimeout(() => {
+				setFiles((prev) => prev.filter((f) => f.status !== "success"));
+			}, 2000);
+		}
+
+		if (failCount > 0) {
+			toast.error(`Failed to upload ${failCount} file${failCount !== 1 ? "s" : ""}`);
 		}
 	}
 
@@ -70,58 +134,83 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 				onDragOver={onDragOver}
 				onDragLeave={onDragLeave}
 				onDrop={onDrop}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
-				}}
-				role="button"
-				tabIndex={0}
 				className={`
           border-2 border-dashed rounded-2xl p-8 transition-all flex flex-col items-center justify-center space-y-4
           ${isDragActive ? "border-primary bg-primary/5 scale-[1.01]" : "border-border/60 hover:border-border hover:bg-muted/30"}
-          ${selectedFile ? "bg-primary/5 border-primary/40" : ""}
+          ${files.length > 0 ? "bg-primary/5 border-primary/40" : ""}
         `}
 			>
 				<input
 					type="file"
+					multiple
 					className="hidden"
 					ref={fileInputRef}
 					onChange={handleFileChange}
 				/>
 
-				{selectedFile ? (
+				{files.length > 0 ? (
 					<div className="flex flex-col items-center space-y-4 w-full">
-						<div className="bg-primary/10 p-4 rounded-xl text-primary relative">
-							<FileIcon size={40} />
-							<button
-								type="button"
-								onClick={() => setSelectedFile(null)}
-								className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-lg hover:scale-110 transition-transform"
-							>
-								<X size={14} />
-							</button>
+						<div className="w-full max-h-[300px] overflow-y-auto space-y-2 pr-2">
+							{files.map((fileStatus, index) => (
+								<div
+									key={`${fileStatus.file.name}-${index}`}
+									className="flex items-center justify-between bg-background/50 p-3 rounded-lg border text-sm"
+								>
+									<div className="flex items-center gap-3 overflow-hidden">
+										<div className="p-2 bg-primary/10 rounded-md text-primary">
+											<FileIcon size={16} />
+										</div>
+										<div className="flex flex-col min-w-0">
+											<span className="font-medium truncate">{fileStatus.file.name}</span>
+											<span className="text-xs text-muted-foreground">
+												{(fileStatus.file.size / 1024 / 1024).toFixed(2)} MB
+												{fileStatus.error && (
+													<span className="text-destructive ml-2">
+														- {fileStatus.error}
+													</span>
+												)}
+											</span>
+										</div>
+									</div>
+
+									<div className="flex items-center gap-2">
+										{fileStatus.status === "uploading" && (
+											<Loader2 className="animate-spin text-muted-foreground" size={16} />
+										)}
+										{fileStatus.status === "success" && (
+											<CheckCircle className="text-green-500" size={16} />
+										)}
+										{fileStatus.status === "error" && (
+											<AlertCircle className="text-destructive" size={16} />
+										)}
+										{fileStatus.status !== "uploading" && (
+											<button
+												type="button"
+												onClick={() => removeFile(index)}
+												className="text-muted-foreground hover:text-destructive transition-colors p-1"
+											>
+												<X size={16} />
+											</button>
+										)}
+									</div>
+								</div>
+							))}
 						</div>
-						<div className="text-center">
-							<p className="font-semibold truncate max-w-[250px]">
-								{selectedFile.name}
-							</p>
-							<p className="text-xs text-muted-foreground">
-								{(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-							</p>
-						</div>
+
 						<div className="flex gap-3 w-full max-w-xs">
 							<Button
 								variant="ghost"
 								className="flex-1"
-								onClick={() => setSelectedFile(null)}
+								onClick={() => setFiles([])}
 								disabled={isUploading}
 								type="button"
 							>
-								Clear
+								Clear All
 							</Button>
 							<Button
 								className="flex-1"
 								onClick={handleUpload}
-								disabled={isUploading}
+								disabled={isUploading || files.some((f) => f.status === "uploading")}
 								type="button"
 							>
 								{isUploading ? (
@@ -129,7 +218,7 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 								) : (
 									<>
 										<Upload size={18} className="mr-2" />
-										Upload
+										Upload {files.filter(f => f.status === 'pending').length > 0 ? `(${files.filter(f => f.status === 'pending').length})` : ''}
 									</>
 								)}
 							</Button>
@@ -141,9 +230,9 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 							<Upload size={32} />
 						</div>
 						<div className="text-center space-y-1">
-							<p className="font-medium">Click or drag file to upload</p>
+							<p className="font-medium">Click or drag files to upload</p>
 							<p className="text-xs text-muted-foreground">
-								Any file up to 50MB (Server limit)
+								Multiple files supported (Max 50MB per file)
 							</p>
 						</div>
 						<Button
@@ -151,7 +240,7 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 							size="sm"
 							onClick={() => fileInputRef.current?.click()}
 						>
-							Select File
+							Select Files
 						</Button>
 					</>
 				)}
