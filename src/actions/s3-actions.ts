@@ -3,6 +3,7 @@
 import {
 	CopyObjectCommand,
 	DeleteObjectCommand,
+	DeleteObjectsCommand,
 	GetObjectAclCommand,
 	GetObjectCommand,
 	ListBucketsCommand,
@@ -201,6 +202,38 @@ export async function listObjects(
 		throw new Error(
 			error instanceof Error ? error.message : "Failed to list objects",
 		);
+	}
+}
+
+export async function deleteObjects(bucket: string, keys: string[]) {
+	try {
+		const client = await getS3Client();
+		
+		if (keys.length === 0) return { success: true };
+
+		const objects = keys.map(key => ({ Key: key }));
+
+		// S3 deleteObjects is limited to 1000 keys per request
+		// We'll batch it just in case, though UI selection limits likely apply
+		const batchSize = 1000;
+		for (let i = 0; i < objects.length; i += batchSize) {
+			const batch = objects.slice(i, i + batchSize);
+			await client.send(
+				new DeleteObjectsCommand({
+					Bucket: bucket,
+					Delete: { Objects: batch },
+				}),
+			);
+		}
+
+		revalidatePath("/dashboard");
+		return { success: true };
+	} catch (error: unknown) {
+		console.error("Bulk delete failed:", error);
+		return {
+			error:
+				error instanceof Error ? error.message : "Failed to delete objects",
+		};
 	}
 }
 

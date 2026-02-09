@@ -74,6 +74,106 @@ export function FileExplorer({
 		undefined,
 	]); // Page 1 is always undefined token
 	const [isSearching, setIsSearching] = useState(false);
+	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+
+    // Clear selection on navigation/search/filter
+    React.useEffect(() => {
+        setSelectedKeys(new Set());
+    }, [prefix, searchQuery, objects]);
+
+	const toggleSelection = (key: string) => {
+		const newSet = new Set(selectedKeys);
+		if (newSet.has(key)) {
+			newSet.delete(key);
+		} else {
+			newSet.add(key);
+		}
+		setSelectedKeys(newSet);
+	};
+
+	const toggleSelectAll = () => {
+		if (selectedKeys.size === objects.length && objects.length > 0) {
+			setSelectedKeys(new Set());
+		} else {
+			setSelectedKeys(new Set(objects.map((o) => o.key)));
+		}
+	};
+
+    const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedKeys.size} items?`)) return;
+        
+        const keysToDelete = Array.from(selectedKeys);
+        
+        // Optimistic update
+        const previousObjects = [...objects];
+        setObjects(objects.filter(obj => !selectedKeys.has(obj.key)));
+        setSelectedKeys(new Set());
+
+        try {
+            // New bulk delete action
+            const { deleteObjects } = await import("@/actions/s3-actions");
+            const result = await deleteObjects(bucketName, keysToDelete);
+            
+            if (result.success) {
+                toast.success("Items deleted successfully");
+                fetchObjects(prefix); // Refresh to be sure
+            } else {
+                setObjects(previousObjects);
+                toast.error(result.error || "Failed to delete items");
+            }
+        } catch (error) {
+            setObjects(previousObjects);
+            toast.error("Failed to delete items");
+        }
+    };
+
+    const handleBulkMakePublic = async () => {
+        if (!confirm(`Make ${selectedKeys.size} items public?`)) return;
+        
+        const keys = Array.from(selectedKeys);
+        const { makePublic } = await import("@/actions/s3-actions");
+        
+        toast.promise(
+            Promise.all(keys.map(key => makePublic(bucketName, key))),
+            {
+                loading: "Updating permissions...",
+                success: () => {
+                    fetchObjects(prefix);
+                    return "Items are now public";
+                },
+                error: "Failed to update permissions"
+            }
+        );
+    };
+    
+    // Download logic: trigger individual downloads
+    const handleBulkDownload = async () => {
+        const keys = Array.from(selectedKeys);
+        if (keys.length > 10 && !confirm(`You are about to download ${keys.length} files. This may trigger multiple popups. Continue?`)) return;
+
+        const { getDownloadUrl } = await import("@/actions/s3-actions");
+        
+        let started = 0;
+        for (const key of keys) {
+             // Skip folders for download
+             if (key.endsWith("/")) continue;
+
+             const res = await getDownloadUrl(bucketName, key);
+             if (res.url) {
+                 // Create hidden link to trigger download
+                 const link = document.createElement('a');
+                 link.href = res.url;
+                 link.download = key.split('/').pop() || 'download';
+                 document.body.appendChild(link);
+                 link.click();
+                 document.body.removeChild(link);
+                 started++;
+                 // Small delay to prevent browser blocking
+                 await new Promise(r => setTimeout(r, 200));
+             }
+        }
+        toast.success(`Started ${started} downloads`);
+    };
 
 	const getFileIcon = (obj: S3ObjectInfo) => {
 		if (obj.type === "folder")
@@ -98,6 +198,7 @@ export function FileExplorer({
 				"html",
 				"css",
 				"json",
+				"mjs",
 			].includes(ext || "")
 		)
 			return <Code2 className="text-blue-500" size={18} />;
@@ -128,6 +229,7 @@ export function FileExplorer({
 				"html",
 				"css",
 				"json",
+				"mjs"
 			].includes(ext || "")
 		)
 			return <Code2 size={40} className="text-blue-400" />;
@@ -165,7 +267,11 @@ export function FileExplorer({
 			if (!token) {
 				setPrevTokens([]);
 				setCurrentPage(1);
-				setTokenCache([undefined]);
+				// Keep cache valid for sequential requests, reset on full refresh
+				if (!nextToken) {
+					// Only reset if we are starting fresh or jumping crazily
+					// Actually, keeping the cache is fine.
+				}
 				// Use the total from the response
 				if (data.totalObjects !== undefined) {
 					setTotalItems(data.totalObjects);
@@ -449,6 +555,47 @@ export function FileExplorer({
 				</div>
 			)}
 
+			{selectedKeys.size > 0 && (
+				<div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background px-6 py-3 rounded-full shadow-xl flex items-center gap-6 animate-in slide-in-from-bottom-10 fade-in duration-300">
+					<div className="font-medium">{selectedKeys.size} selected</div>
+					<div className="h-4 w-px bg-background/20" />
+					<div className="flex items-center gap-2">
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={handleBulkDownload}
+							className="hover:bg-background/20 text-background hover:text-background h-8"
+						>
+							Download
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={handleBulkMakePublic}
+							className="hover:bg-background/20 text-background hover:text-background h-8"
+						>
+							Make Public
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={handleBulkDelete}
+							className="hover:bg-red-500/20 text-red-300 hover:text-red-200 h-8"
+						>
+							Delete
+						</Button>
+                        <Button
+							variant="ghost"
+							size="icon"
+                            onClick={() => setSelectedKeys(new Set())}
+							className="hover:bg-background/20 text-background hover:text-background h-8 w-8 ml-2 rounded-full"
+						>
+							<Plus className="rotate-45" size={16} />
+						</Button>
+					</div>
+				</div>
+			)}
+
 			<div className="min-h-[400px] relative">
 				{loading && (
 					<div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
@@ -461,6 +608,14 @@ export function FileExplorer({
 						<table className="w-full text-sm text-left">
 							<thead className="bg-muted/50 text-muted-foreground font-medium border-b">
 								<tr>
+                                    <th className="px-4 py-3 w-[40px]">
+                                        <input 
+                                            type="checkbox" 
+                                            className="rounded border-input"
+                                            checked={selectedKeys.size === objects.length && objects.length > 0}
+                                            onChange={toggleSelectAll}
+                                        />
+                                    </th>
 									<th className="px-4 py-3">Name</th>
 									<th className="px-4 py-3 hidden md:table-cell">Size</th>
 									<th className="px-4 py-3 hidden lg:table-cell">
@@ -473,7 +628,7 @@ export function FileExplorer({
 								{filteredObjects.length === 0 && !loading && (
 									<tr>
 										<td
-											colSpan={4}
+											colSpan={5}
 											className="px-4 py-12 text-center text-muted-foreground"
 										>
 											No files or folders found
@@ -483,8 +638,26 @@ export function FileExplorer({
 								{sortedObjects.map((obj) => (
 									<tr
 										key={obj.key}
-										className="hover:bg-muted/30 transition-colors group"
+										className={cn(
+                                            "hover:bg-muted/30 transition-colors group",
+                                            selectedKeys.has(obj.key) && "bg-primary/5 hover:bg-primary/10"
+                                        )}
+                                        onClick={(e) => {
+                                            // Select on row click if ctrl/cmd held
+                                            if (e.ctrlKey || e.metaKey) {
+                                                toggleSelection(obj.key);
+                                            }
+                                        }}
 									>
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="checkbox" 
+                                                className="rounded border-input"
+                                                checked={selectedKeys.has(obj.key)}
+                                                onChange={() => toggleSelection(obj.key)}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                        </td>
 										<td className="px-4 py-3">
 											<div className="flex items-center gap-3">
 												{getFileIcon(obj)}
@@ -528,6 +701,7 @@ export function FileExplorer({
 															const url = `https://${bucketName}.s3.amazonaws.com/${obj.key}`;
 															navigator.clipboard.writeText(url);
 															toast.success("Public URL copied");
+															// e.preventDefault(); // Unnecessary with stopPropagation
 														}}
 														title="Copy Public URL"
 													>
@@ -556,10 +730,26 @@ export function FileExplorer({
 								className={cn(
 									"group hover:border-primary/50 transition-all cursor-pointer relative",
 									obj.type === "folder" ? "bg-primary/5" : "bg-card/40",
+                                    selectedKeys.has(obj.key) && "border-primary bg-primary/10"
 								)}
-								onClick={() => obj.type === "folder" && fetchObjects(obj.key)}
+								onClick={(e) => {
+                                    if (e.ctrlKey || e.metaKey) {
+                                        toggleSelection(obj.key);
+                                    } else if (obj.type === "folder") {
+                                        fetchObjects(obj.key);
+                                    }
+                                }}
 							>
 								<CardContent className="p-4 flex flex-col items-center justify-center text-center space-y-2">
+                                    <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity data-[selected=true]:opacity-100" data-selected={selectedKeys.has(obj.key)}>
+                                        <input 
+                                            type="checkbox" 
+                                            className="rounded border-input h-4 w-4 shadow-sm"
+                                            checked={selectedKeys.has(obj.key)}
+                                            onChange={() => toggleSelection(obj.key)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
 									{getFileIconLarge(obj)}
 									<span className="text-xs font-medium truncate w-full">
 										{obj.name}
