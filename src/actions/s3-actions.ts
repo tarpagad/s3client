@@ -41,240 +41,160 @@ export async function listObjects(
 	prefix: string = "",
 	maxKeys: number = 100,
 	continuationToken?: string,
+	sortBy: "date-desc" | "date-asc" | "name-asc" | "name-desc" = "date-desc",
 ): Promise<ListObjectsResponse> {
 	try {
 		const client = await getS3Client();
 
-		// Custom Pagination Token Structure
-		// We encode our state into the token so the client remains stateless
-		let state: {
-			folderOffset: number;
-			s3Token?: string;
-			phase: "folders" | "files";
-		} = { folderOffset: 0, phase: "folders" };
-
+		// Parse token to get offset (simple pagination now)
+		let offset = 0;
 		if (continuationToken) {
 			try {
-				state = JSON.parse(Buffer.from(continuationToken, "base64").toString());
-			} catch (_e) {
-				// Fallback to defaults if token is invalid
+				const decoded = JSON.parse(
+					Buffer.from(continuationToken, "base64").toString(),
+				);
+				offset = decoded.offset || 0;
+			} catch {
+				offset = 0;
 			}
 		}
 
+		// 1. Fetch ALL folders and files (up to safety limit)
+		// We need everything to sort correctly
 		const allFolders: S3ObjectInfo[] = [];
-		// Always discover folders if we are in folders phase
-		if (state.phase === "folders") {
-			let folderToken: string | undefined;
-			do {
-				const folderResponse = await client.send(
-					new ListObjectsV2Command({
-						Bucket: bucket,
-						Prefix: prefix,
-						Delimiter: "/",
-						MaxKeys: 1000,
-						ContinuationToken: folderToken,
-					}),
-				);
+		const allFiles: {
+			Key: string;
+			LastModified?: Date;
+			Size?: number;
+			ETag?: string;
+		}[] = [];
 
-				const pageFolders = (folderResponse.CommonPrefixes || []).map((p) => {
+		let s3Token: string | undefined;
+		const SAFETY_LIMIT = 2000;
+		let totalFetched = 0;
+
+		do {
+			const command = new ListObjectsV2Command({
+				Bucket: bucket,
+				Prefix: prefix,
+				Delimiter: "/",
+				ContinuationToken: s3Token,
+			});
+			const response = await client.send(command);
+
+			// Folders (CommonPrefixes)
+			if (response.CommonPrefixes) {
+				for (const p of response.CommonPrefixes) {
 					const prefixStr = p.Prefix ?? "";
-					const name = prefixStr.slice(0, -1).split("/").pop() || "";
-					return {
-						key: prefixStr,
-						name,
-						type: "folder" as const,
-					};
-				});
-				allFolders.push(...pageFolders);
-				folderToken = folderResponse.NextContinuationToken;
-			} while (folderToken);
-
-			// Sort folders alphabetically
-			allFolders.sort((a, b) => a.name.localeCompare(b.name));
-		}
-
-		const objects: S3ObjectInfo[] = [];
-		let nextToken: string | undefined;
-
-		if (state.phase === "folders") {
-			// Extract folders for this page
-			const pageFolders = allFolders.slice(
-				state.folderOffset,
-				state.folderOffset + maxKeys,
-			);
-			objects.push(...pageFolders);
-
-			const remainingCapacity = maxKeys - pageFolders.length;
-
-			if (remainingCapacity > 0) {
-				// Folders exhausted on this page, start fetching files
-				let currentS3Token = state.s3Token;
-				const fetchedFiles: S3ObjectInfo[] = [];
-
-				while (fetchedFiles.length < remainingCapacity) {
-					const fileResponse = await client.send(
-						new ListObjectsV2Command({
-							Bucket: bucket,
-							Prefix: prefix,
-							Delimiter: "/",
-							MaxKeys: maxKeys, // Fetch full pages for efficiency
-							ContinuationToken: currentS3Token,
-						}),
-					);
-
-					const contents = fileResponse.Contents || [];
-					const filesToProcess = contents.filter((c) => c.Key !== prefix);
-
-					// Batch ACL checks
-					const batchSize = 10;
-					for (let i = 0; i < filesToProcess.length; i += batchSize) {
-						if (fetchedFiles.length >= remainingCapacity) break;
-
-						const batch = filesToProcess.slice(i, i + batchSize);
-						const batchResults = await Promise.all(
-							batch.map(async (content) => {
-								const key = content.Key ?? "";
-								const name = key.split("/").pop() || "";
-								const extension = name.split(".").pop();
-
-								let isPublic = false;
-								try {
-									const acl = await client.send(
-										new GetObjectAclCommand({ Bucket: bucket, Key: key }),
-									);
-									isPublic = (acl.Grants || []).some(
-										(grant) =>
-											grant.Grantee?.URI ===
-												"http://acs.amazonaws.com/groups/global/AllUsers" &&
-											grant.Permission === "READ",
-									);
-								} catch (_e) {}
-
-								return {
-									key: key,
-									name,
-									lastModified: content.LastModified,
-									size: content.Size,
-									etag: content.ETag,
-									type: "file" as const,
-									extension,
-									isPublic,
-								};
-							}),
-						);
-						fetchedFiles.push(...(batchResults as S3ObjectInfo[]));
+					// Deduplicate folders if we hit multiple pages
+					if (!allFolders.some((f) => f.key === prefixStr)) {
+						const name = prefixStr.slice(0, -1).split("/").pop() || "";
+						allFolders.push({
+							key: prefixStr,
+							name,
+							type: "folder" as const,
+						});
 					}
-
-					currentS3Token = fileResponse.NextContinuationToken;
-					if (!currentS3Token) break;
 				}
-
-				objects.push(...fetchedFiles.slice(0, remainingCapacity));
-
-				// Prepare next token
-				if (currentS3Token || fetchedFiles.length > remainingCapacity) {
-					// We still have files left for next pages
-					const nextState = {
-						folderOffset: state.folderOffset + pageFolders.length,
-						s3Token: currentS3Token,
-						phase: "files" as const,
-					};
-					nextToken = Buffer.from(JSON.stringify(nextState)).toString("base64");
-				} else if (
-					state.folderOffset + pageFolders.length <
-					allFolders.length
-				) {
-					// No files but more folders exist (unlikely if remainingCapacity > 0 but safe)
-					const nextState = {
-						folderOffset: state.folderOffset + pageFolders.length,
-						phase: "folders" as const,
-					};
-					nextToken = Buffer.from(JSON.stringify(nextState)).toString("base64");
-				}
-			} else {
-				// We filled the page with only folders
-				const nextState = {
-					folderOffset: state.folderOffset + maxKeys,
-					phase: (state.folderOffset + maxKeys >= allFolders.length
-						? "files"
-						: "folders") as "folders" | "files",
-					s3Token: undefined,
-				};
-				nextToken = Buffer.from(JSON.stringify(nextState)).toString("base64");
 			}
-		} else {
-			// Phase: files
-			const fetchedFiles: S3ObjectInfo[] = [];
-			let currentS3Token = state.s3Token;
 
-			while (fetchedFiles.length < maxKeys) {
-				const fileResponse = await client.send(
-					new ListObjectsV2Command({
-						Bucket: bucket,
-						Prefix: prefix,
-						Delimiter: "/",
-						MaxKeys: maxKeys,
-						ContinuationToken: currentS3Token,
-					}),
-				);
+			// Files (Contents)
+			if (response.Contents) {
+				for (const c of response.Contents) {
+					if (c.Key === prefix) continue; // Skip the folder object itself
+					allFiles.push({
+						Key: c.Key || "",
+						LastModified: c.LastModified,
+						Size: c.Size,
+						ETag: c.ETag,
+					});
+				}
+			}
 
-				const contents = fileResponse.Contents || [];
-				const filesToProcess = contents.filter((c) => c.Key !== prefix);
+			totalFetched = allFolders.length + allFiles.length;
+			s3Token = response.NextContinuationToken;
+		} while (s3Token && totalFetched < SAFETY_LIMIT);
 
-				const batchSize = 10;
-				for (let i = 0; i < filesToProcess.length; i += batchSize) {
-					if (fetchedFiles.length >= maxKeys) break;
-					const batch = filesToProcess.slice(i, i + batchSize);
-					const batchResults = await Promise.all(
-						batch.map(async (content) => {
-							const key = content.Key ?? "";
-							const name = key.split("/").pop() || "";
-							const extension = name.split(".").pop();
-							let isPublic = false;
-							try {
-								const acl = await client.send(
-									new GetObjectAclCommand({ Bucket: bucket, Key: key }),
-								);
-								isPublic = (acl.Grants || []).some(
-									(grant) =>
-										grant.Grantee?.URI ===
-											"http://acs.amazonaws.com/groups/global/AllUsers" &&
-										grant.Permission === "READ",
-								);
-							} catch (_e) {}
-							return {
-								key,
-								name,
-								lastModified: content.LastModified,
-								size: content.Size,
-								etag: content.ETag,
-								type: "file" as const,
-								extension,
-								isPublic,
-							};
-						}),
+		// 2. Sort Logic
+		// Folders always alphabetical
+		allFolders.sort((a, b) => a.name.localeCompare(b.name));
+
+		// Files sorting
+		allFiles.sort((a, b) => {
+			if (sortBy === "date-desc") {
+				return (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0);
+			}
+			if (sortBy === "date-asc") {
+				return (a.LastModified?.getTime() || 0) - (b.LastModified?.getTime() || 0);
+			}
+			const nameA = a.Key.split("/").pop() || "";
+			const nameB = b.Key.split("/").pop() || "";
+			if (sortBy === "name-asc") {
+				return nameA.localeCompare(nameB);
+			}
+			if (sortBy === "name-desc") {
+				return nameB.localeCompare(nameA);
+			}
+			return 0;
+		});
+
+		// 3. Pagination & Slicing
+		// Combined list: Folders first, then Files
+		// We map files to S3ObjectInfo structure (without ACLs yet)
+		const allFilesMapped: S3ObjectInfo[] = allFiles.map((f) => {
+			const name = f.Key.split("/").pop() || "";
+			const extension = name.split(".").pop();
+			return {
+				key: f.Key,
+				name,
+				lastModified: f.LastModified,
+				size: f.Size,
+				etag: f.ETag,
+				type: "file" as const,
+				extension,
+				isPublic: false, // Placeholder
+			};
+		});
+
+		const combined = [...allFolders, ...allFilesMapped];
+		const paginatedItems = combined.slice(offset, offset + maxKeys);
+
+		// 4. Optimize ACL Fetching
+		// Only fetch ACLs for the *files* in the current page
+		const itemsWithAcl = await Promise.all(
+			paginatedItems.map(async (item) => {
+				if (item.type !== "file") return item;
+
+				try {
+					const acl = await client.send(
+						new GetObjectAclCommand({ Bucket: bucket, Key: item.key }),
 					);
-					fetchedFiles.push(...(batchResults as S3ObjectInfo[]));
+					const isPublic = (acl.Grants || []).some(
+						(grant) =>
+							grant.Grantee?.URI ===
+								"http://acs.amazonaws.com/groups/global/AllUsers" &&
+							grant.Permission === "READ",
+					);
+					return { ...item, isPublic };
+				} catch (e) {
+					// console.warn(`Failed to fetch ACL for ${item.key}`, e);
+					return item;
 				}
+			}),
+		);
 
-				currentS3Token = fileResponse.NextContinuationToken;
-				if (!currentS3Token) break;
-			}
-
-			objects.push(...fetchedFiles.slice(0, maxKeys));
-			if (currentS3Token || fetchedFiles.length > maxKeys) {
-				const nextState = {
-					folderOffset: state.folderOffset,
-					s3Token: currentS3Token,
-					phase: "files" as const,
-				};
-				nextToken = Buffer.from(JSON.stringify(nextState)).toString("base64");
-			}
+		// 5. Prepare Next Token
+		let nextToken: string | undefined;
+		if (offset + maxKeys < combined.length) {
+			nextToken = Buffer.from(
+				JSON.stringify({ offset: offset + maxKeys }),
+			).toString("base64");
 		}
 
 		return {
-			objects,
+			objects: itemsWithAcl,
 			nextToken,
+			totalObjects: combined.length,
 		};
 	} catch (error: unknown) {
 		console.error("Failed to list objects:", error);

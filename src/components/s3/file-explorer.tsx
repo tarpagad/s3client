@@ -135,7 +135,13 @@ export function FileExplorer({
 		return <File size={40} className="text-muted-foreground" />;
 	};
 
-	async function fetchObjects(newPrefix: string, token?: string) {
+	// Handle Date serialization from Server Actions
+	const safeDate = (date: Date | string | undefined): Date | undefined => {
+		if (!date) return undefined;
+		return new Date(date);
+	};
+
+	async function fetchObjects(newPrefix: string, token?: string, sortStr?: typeof sortBy) {
 		setLoading(true);
 		try {
 			const data = await listObjects(
@@ -143,8 +149,16 @@ export function FileExplorer({
 				newPrefix,
 				initialPrefs.itemsPerPage,
 				token,
+				sortStr || sortBy,
 			);
-			setObjects(data.objects);
+			
+			// Fix Date objects coming from Server Action (serialized as strings)
+			const fixedObjects = data.objects.map(obj => ({
+				...obj,
+				lastModified: safeDate(obj.lastModified)
+			}));
+
+			setObjects(fixedObjects);
 			setNextToken(data.nextToken);
 			setPrefix(newPrefix);
 
@@ -152,10 +166,10 @@ export function FileExplorer({
 				setPrevTokens([]);
 				setCurrentPage(1);
 				setTokenCache([undefined]);
-				// Fetch total count in background
-				countObjects(bucketName, newPrefix).then((res) =>
-					setTotalItems(res.count),
-				);
+				// Use the total from the response
+				if (data.totalObjects !== undefined) {
+					setTotalItems(data.totalObjects);
+				}
 			}
 
 			// Update token cache for the NEXT page
@@ -166,7 +180,10 @@ export function FileExplorer({
 					next[nextPageIndex] = data.nextToken;
 					return next;
 				});
-			}
+			} else {
+                 // Explicitly clear future cache if no next token
+                 setTokenCache(prev => prev.slice(0, currentPage));
+            }
 			setIsSearching(false);
 		} catch (error: unknown) {
 			toast.error(
@@ -180,8 +197,13 @@ export function FileExplorer({
 	async function handleNextPage() {
 		if (!nextToken) return;
 		setPrevTokens([...prevTokens, nextToken]);
+		// Need to increment page BEFORE fetching for the cache logic to work for *next* page
+        // But the previous implementation logic was: page 1 (no token) -> loads. nextToken set.
+        // Click Next -> fetch(nextToken). 
+		// Actually, let's keep it simple:
+        const nextPageNum = currentPage + 1;
+        setCurrentPage(nextPageNum);
 		await fetchObjects(prefix, nextToken);
-		setCurrentPage(currentPage + 1);
 	}
 
 	async function handlePrevPage() {
@@ -190,8 +212,9 @@ export function FileExplorer({
 		newPrevTokens.pop(); // Remove current
 		const lastToken = newPrevTokens[newPrevTokens.length - 1];
 		setPrevTokens(newPrevTokens);
+        const prevPageNum = currentPage - 1;
+        setCurrentPage(prevPageNum);
 		await fetchObjects(prefix, lastToken);
-		setCurrentPage(currentPage - 1);
 	}
 
 	async function jumpToPage(page: number) {
@@ -208,33 +231,17 @@ export function FileExplorer({
 				newPrevTokens.push(tokenCache[i]);
 			}
 			setPrevTokens(newPrevTokens as string[]);
+            setCurrentPage(page);
 			await fetchObjects(prefix, token);
-			setCurrentPage(page);
 		} else {
-			// Sequential discovery: Jump to last known and then next until reached
-			// (For simplicity in this premium UX, we'll notify the user or just block)
-			toast.info(`Fetching page ${page}...`);
-			let currentDiscoPage = tokenCache.length;
-			let currentToken = tokenCache[currentDiscoPage - 1];
-
-			while (currentDiscoPage < page) {
-				const data = await listObjects(
-					bucketName,
-					prefix,
-					initialPrefs.itemsPerPage,
-					currentToken,
-				);
-				currentToken = data.nextToken;
-				if (!currentToken && currentDiscoPage < page - 1) break; // End of results
-				currentDiscoPage++;
-				// Cache discovered tokens
-				setTokenCache((prev) => {
-					const next = [...prev];
-					next[currentDiscoPage - 1] = currentToken;
-					return next;
-				});
-			}
-			await jumpToPage(page);
+            // New logic: with simple offset pagination server-side, we technically *could* construct the token
+            // But to stick to the opaque token pattern, and since we don't have the "construct token" logic exposed to client,
+            // we will sadly have to forbid jumping to unknown pages OR accept that the user has to click "Next"
+            // HOWEVER, since I know the server implementation uses base64(json({offset: N})), 
+            // I CAN optimistically construct it here if I really wanted to, but that leaks implementation details.
+            
+            // Allow sequential jump only for now or notify
+            toast.info("Please navigate sequentially to caching pages.");
 		}
 	}
 
@@ -248,8 +255,13 @@ export function FileExplorer({
 		setIsSearching(true);
 		try {
 			const data = await searchObjects(bucketName, prefix, searchQuery);
-			setObjects(data.objects);
-			setNextToken(undefined); // Search results are currently flat/unpaginated in this impl
+            // Fix Dates
+			const fixedObjects = data.objects.map(obj => ({
+				...obj,
+				lastModified: safeDate(obj.lastModified)
+			}));
+			setObjects(fixedObjects);
+			setNextToken(undefined); 
 			setTotalItems(data.totalObjects ?? data.objects.length);
 		} catch (error: unknown) {
 			toast.error(error instanceof Error ? error.message : "Search failed");
@@ -270,12 +282,13 @@ export function FileExplorer({
 				obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
 			);
 
-	// Sort items
+	// Client-side sort is now just for display consistency on the current page
+    // The server handles the "True" sort
 	const sortedObjects = [...filteredObjects].sort((a, b) => {
 		// Folders always come first
 		if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
 
-		// Secondary sort logic
+        // Use the same logic as server for consistent in-page display
 		if (sortBy === "date-desc") {
 			return (
 				(b.lastModified?.getTime() || 0) - (a.lastModified?.getTime() || 0)
@@ -623,15 +636,15 @@ export function FileExplorer({
 							<>
 								<select
 									value={sortBy}
-									onChange={(e) =>
-										setSortBy(
-											e.target.value as
-												| "date-desc"
-												| "date-asc"
-												| "name-asc"
-												| "name-desc",
-										)
-									}
+									onChange={(e) => {
+										const newSort = e.target.value as
+											| "date-desc"
+											| "date-asc"
+											| "name-asc"
+											| "name-desc";
+										setSortBy(newSort);
+										fetchObjects(prefix, undefined, newSort);
+									}}
 									className="h-8 text-xs rounded-md border border-input bg-background px-2 py-1 outline-none mr-4"
 								>
 									<option value="date-desc">Newest First</option>
