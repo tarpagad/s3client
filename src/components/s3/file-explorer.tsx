@@ -33,6 +33,7 @@ import type { UserPrefs } from "@/lib/preferences";
 import type { S3ObjectInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Breadcrumbs } from "./breadcrumbs";
+import { ConfirmUploadDialog } from "./confirm-upload-dialog";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { ObjectActions } from "./object-actions";
 import { PreviewModal } from "./preview-modal";
@@ -75,6 +76,9 @@ export function FileExplorer({
 	]); // Page 1 is always undefined token
 	const [isSearching, setIsSearching] = useState(false);
 	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+	const [isDragActive, setIsDragActive] = useState(false);
+	const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+	const [showConfirmUpload, setShowConfirmUpload] = useState(false);
 
     // Clear selection on navigation/search/filter
     React.useEffect(() => {
@@ -451,8 +455,46 @@ export function FileExplorer({
 		);
 	}
 
+	function onGlobalDragOver(e: React.DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		setIsDragActive(true);
+	}
+
+	function onGlobalDragLeave(e: React.DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		// Only deactivate if we're leaving the container entirely
+		if (e.relatedTarget === null) {
+			setIsDragActive(false);
+		}
+	}
+
+	function onGlobalDrop(e: React.DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		setIsDragActive(false);
+		if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+			setDroppedFiles(Array.from(e.dataTransfer.files));
+			setShowConfirmUpload(true);
+		}
+	}
+
 	return (
-		<div className="space-y-4">
+		<div 
+			className="space-y-4 relative"
+			onDragOver={onGlobalDragOver}
+			onDragLeave={onGlobalDragLeave}
+			onDrop={onGlobalDrop}
+		>
+			{isDragActive && (
+				<div className="absolute inset-0 z-40 bg-primary/10 border-2 border-dashed border-primary rounded-2xl flex flex-col items-center justify-center backdrop-blur-sm animate-in fade-in duration-200">
+					<div className="bg-background p-6 rounded-full shadow-xl text-primary animate-bounce">
+						<CloudUpload size={48} />
+					</div>
+					<p className="mt-4 text-xl font-bold text-primary">Drop files to upload to {prefix || "root"}</p>
+				</div>
+			)}
 			<div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 				<Breadcrumbs
 					bucketName={bucketName}
@@ -931,6 +973,21 @@ export function FileExplorer({
 					prefix={prefix}
 					onClose={() => setShowCreateFolder(false)}
 					onSuccess={() => fetchObjects(prefix)}
+				/>
+			)}
+
+			{showConfirmUpload && (
+				<ConfirmUploadDialog
+					bucketName={bucketName}
+					prefix={prefix}
+					files={droppedFiles}
+					onClose={() => {
+						setShowConfirmUpload(false);
+						setDroppedFiles([]);
+					}}
+					onSuccess={() => {
+						fetchObjects(prefix);
+					}}
 				/>
 			)}
 		</div>
