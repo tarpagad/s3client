@@ -22,6 +22,7 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 	const [isDragActive, setIsDragActive] = useState(false);
 	const [files, setFiles] = useState<FileStatus[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
+	const [isPublic, setIsPublic] = useState(true);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	function addFiles(newFiles: File[]) {
@@ -86,7 +87,7 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 			const key = prefix + fileStatus.file.name;
 
 			try {
-				const result = await uploadFile(bucketName, key, formData);
+				const result = await uploadFile(bucketName, key, formData, isPublic);
 				if (result.success) {
 					uploadedFiles[i] = { ...fileStatus, status: "success" };
 					successCount++;
@@ -195,6 +196,19 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 									</div>
 								</div>
 							))}
+						</div>
+						
+						<div className="flex items-center space-x-2 bg-muted/50 py-2 px-4 rounded-full border border-primary/20">
+							<input
+								type="checkbox"
+								id="is-public"
+								checked={isPublic}
+								onChange={(e) => setIsPublic(e.target.checked)}
+								className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+							/>
+							<label htmlFor="is-public" className="text-sm font-medium cursor-pointer select-none">
+								Make files public automatically
+							</label>
 						</div>
 
 						<div className="flex gap-3 w-full max-w-xs">

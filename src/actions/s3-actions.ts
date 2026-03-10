@@ -317,6 +317,7 @@ export async function uploadFile(
 	bucket: string,
 	key: string,
 	fileData: FormData,
+	isPublic: boolean = false,
 ) {
 	try {
 		const client = await getS3Client();
@@ -335,6 +336,7 @@ export async function uploadFile(
 				Key: key,
 				Body: buffer,
 				ContentType: file.type,
+				ACL: isPublic ? "public-read" : undefined,
 			}),
 		);
 
