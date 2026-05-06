@@ -5,8 +5,26 @@ import { decrypt, encrypt } from "@/lib/encryption";
 import { type S3Credentials, s3CredentialsSchema } from "@/lib/types";
 
 const COOKIE_NAME = "s3-credentials";
-const ENCRYPTION_KEY =
-	process.env.ENCRYPTION_KEY || "default-dev-key-do-not-use-in-prod";
+
+function getEncryptionKey(): string {
+	const key = process.env.ENCRYPTION_KEY;
+
+	if (!key) {
+		if (process.env.NODE_ENV === "production") {
+			throw new Error(
+				"ENCRYPTION_KEY environment variable is required in production. Generate a secure key and set it in your deployment environment."
+			);
+		}
+
+		// Dev-only fallback — never use in production
+		console.warn(
+			"⚠️  ENCRYPTION_KEY not set. Using insecure default. Set ENCRYPTION_KEY in .env.local for secure development."
+		);
+		return "default-dev-key-do-not-use-in-prod";
+	}
+
+	return key;
+}
 
 export async function saveS3Credentials(data: S3Credentials) {
 	const result = s3CredentialsSchema.safeParse(data);
@@ -16,7 +34,7 @@ export async function saveS3Credentials(data: S3Credentials) {
 
 	try {
 		const jsonStr = JSON.stringify(result.data);
-		const encrypted = await encrypt(jsonStr, ENCRYPTION_KEY);
+		const encrypted = await encrypt(jsonStr, getEncryptionKey());
 
 		const cookieStore = await cookies();
 		cookieStore.set(COOKIE_NAME, encrypted, {
@@ -47,7 +65,7 @@ export async function getS3Credentials(): Promise<S3Credentials | null> {
 	if (!encrypted) return null;
 
 	try {
-		const decrypted = await decrypt(encrypted, ENCRYPTION_KEY);
+		const decrypted = await decrypt(encrypted, getEncryptionKey());
 		if (!decrypted) return null;
 		return JSON.parse(decrypted) as S3Credentials;
 	} catch (error) {
