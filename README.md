@@ -2,6 +2,8 @@
 
 A high-performance, secure, and beautiful web-based S3 client built with Next.js and deployed on Cloudflare Workers. Manage your Amazon S3 buckets and files with a native-like desktop experience directly in your browser.
 
+> **Alternative Deployment**: For a vanilla Next.js version deployable to Railway.app, Vercel, or any Node.js host, check out the `railway-migration` branch.
+
 ## ✨ Features
 
 ### 🔐 Security First
@@ -44,7 +46,7 @@ A high-performance, secure, and beautiful web-based S3 client built with Next.js
 ### Prerequisites
 - [Bun](https://bun.sh) installed.
 - An AWS Account with S3 access.
-- A Cloudflare account for deployment.
+- A Cloudflare account for deployment (or use the `railway-migration` branch for standard Next.js deployment).
 
 ### Environment Variables
 Create a `.env.local` file with the following:
@@ -65,9 +67,20 @@ ENCRYPTION_KEY=your_32_character_hex_key
 3. Open [http://localhost:3000](http://localhost:3000) and connect your S3 credentials.
 
 ## 📦 Deployment
-Deploy to Cloudflare using OpenNext:
+
+### Cloudflare Workers
+Deploy using OpenNext:
 ```bash
 bun run deploy
+```
+
+### Railway / Vercel / Other Node.js Hosts
+Switch to the `railway-migration` branch which removes the Cloudflare-specific dependencies and runs as a standard Next.js application:
+```bash
+git checkout railway-migration
+bun install
+bun run build
+bun run start
 ```
 
 ---
