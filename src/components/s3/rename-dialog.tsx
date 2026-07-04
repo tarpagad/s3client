@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 interface RenameDialogProps {
+	connectionId: string;
 	bucketName: string;
 	oldKey: string;
 	onClose: () => void;
@@ -17,6 +18,7 @@ interface RenameDialogProps {
 }
 
 export function RenameDialog({
+	connectionId,
 	bucketName,
 	oldKey,
 	onClose,
@@ -38,14 +40,14 @@ export function RenameDialog({
 		}
 
 		try {
-			const result = await renameObject(bucketName, oldKey, newKey);
+			const result = await renameObject(connectionId, bucketName, oldKey, newKey);
 			if (result.success) {
 				toast.success("Renamed successfully");
 				onSuccess();
 				onClose();
 			} else {
 				if (onOptimisticRename) {
-					onOptimisticRename(newKey, oldKey); // Quick rollback
+					onOptimisticRename(newKey, oldKey);
 				}
 				toast.error(result.error || "Failed to rename");
 			}

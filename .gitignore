@@ -48,5 +48,8 @@ next-env.d.ts
 .wrangler
 .dev.vars*
 
+# local database
+*.db
+
 
 !.dev.vars.example

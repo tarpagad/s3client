@@ -19,6 +19,7 @@ import { PreviewModal } from "./preview-modal";
 import { RenameDialog } from "./rename-dialog";
 
 interface ObjectActionsProps {
+	connectionId: string;
 	bucketName: string;
 	object: S3ObjectInfo;
 	onRefresh: () => void;
@@ -27,6 +28,7 @@ interface ObjectActionsProps {
 }
 
 export function ObjectActions({
+	connectionId,
 	bucketName,
 	object,
 	onRefresh,
@@ -54,14 +56,13 @@ export function ObjectActions({
 		if (isOpen && buttonRef.current) {
 			const rect = buttonRef.current.getBoundingClientRect();
 			const spaceBelow = window.innerHeight - rect.bottom;
-			// If less than 250px below, open upwards
 			setOpenUp(spaceBelow < 250);
 		}
 	}, [isOpen]);
 
 	async function handleDownload() {
 		setIsOpen(false);
-		const result = await getDownloadUrl(bucketName, object.key);
+		const result = await getDownloadUrl(connectionId, bucketName, object.key);
 		if (result.url) {
 			window.open(result.url, "_blank");
 		} else {
@@ -77,7 +78,7 @@ export function ObjectActions({
 
 	async function handleMakePublic() {
 		setIsOpen(false);
-		const result = await makePublic(bucketName, object.key);
+		const result = await makePublic(connectionId, bucketName, object.key);
 		if (result.success) {
 			toast.success("Object is now public");
 			onRefresh();
@@ -87,11 +88,6 @@ export function ObjectActions({
 	}
 
 	function getPublicUrl() {
-		// This depends on the S3 provider. For AWS prefix: https://BUCKET.s3.REGION.amazonaws.com/KEY
-		// However, for more general usage, we can construct it if we know the endpoint.
-		// For now, let's assume a standard AWS-like structure if endpoint is not set.
-		// We'd ideally want to get the endpoint/region from the client config or server.
-		// Simplified for now:
 		return `https://${bucketName}.s3.amazonaws.com/${object.key}`;
 	}
 
@@ -206,6 +202,7 @@ export function ObjectActions({
 
 			{showRename && (
 				<RenameDialog
+					connectionId={connectionId}
 					bucketName={bucketName}
 					oldKey={object.key}
 					onClose={() => setShowRename(false)}
@@ -216,6 +213,7 @@ export function ObjectActions({
 
 			{showPreview && (
 				<PreviewModal
+					connectionId={connectionId}
 					bucketName={bucketName}
 					object={object}
 					onClose={() => setShowPreview(false)}

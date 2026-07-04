@@ -4,34 +4,40 @@
 	"private": true,
 	"scripts": {
 		"dev": "next dev",
+		"clean": "rm -rf .next",
+		"clean:db": "rm -f *.db *.db-shm *.db-wal",
 		"build": "next build",
 		"start": "next start",
-		"lint": "next lint"
+		"lint": "next lint",
+		"seed": "tsx src/scripts/seed.ts"
 	},
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.981.0",
-		"@aws-sdk/s3-request-presigner": "^3.981.0",
-		"better-auth": "^1.4.18",
+		"@aws-sdk/client-s3": "^3.1079.0",
+		"@aws-sdk/s3-request-presigner": "^3.1079.0",
+		"better-auth": "^1.6.23",
+		"better-sqlite3": "^12.11.1",
 		"clsx": "^2.1.1",
-		"framer-motion": "^12.31.0",
+		"framer-motion": "^12.42.2",
 		"lucide-react": "^0.563.0",
 		"next": "16.1.5",
 		"next-themes": "^0.4.6",
 		"react": "19.1.5",
 		"react-dom": "19.1.5",
 		"sonner": "^2.0.7",
-		"tailwind-merge": "^3.4.0",
-		"zod": "^4.3.6"
+		"tailwind-merge": "^3.6.0",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
-		"@eslint/eslintrc": "^3",
-		"@tailwindcss/postcss": "^4",
-		"@types/node": "^25.2.0",
-		"@types/react": "^19.1.5",
-		"@types/react-dom": "^19.1.5",
-		"eslint": "^9",
+		"@eslint/eslintrc": "^3.3.5",
+		"@tailwindcss/postcss": "^4.3.2",
+		"@types/better-sqlite3": "^7.6.13",
+		"@types/node": "^25.9.4",
+		"@types/react": "^19.2.17",
+		"@types/react-dom": "^19.2.3",
+		"eslint": "^9.39.4",
 		"eslint-config-next": "15.4.6",
-		"tailwindcss": "^4",
-		"typescript": "^5.7.4"
+		"tailwindcss": "^4.3.2",
+		"tsx": "^4.23.0",
+		"typescript": "^5.9.3"
 	}
 }

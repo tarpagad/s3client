@@ -1,28 +1,50 @@
 import { S3Client, type S3ClientConfig } from "@aws-sdk/client-s3";
-import { getS3Credentials } from "@/actions/auth-actions";
+import { decrypt } from "@/lib/encryption";
+import { getBucketConnection } from "@/actions/bucket-actions";
 
-export async function getS3Client(): Promise<S3Client> {
-	const credentials = await getS3Credentials();
-
-	if (!credentials) {
-		throw new Error(
-			"No S3 credentials found. Please connect your AWS account.",
-		);
+function getEncryptionKey(): string {
+	const key = process.env.ENCRYPTION_KEY;
+	if (!key) {
+		if (process.env.NODE_ENV === "production") {
+			throw new Error("ENCRYPTION_KEY environment variable is required");
+		}
+		return "default-dev-key-do-not-use-in-prod";
 	}
+	return key;
+}
+
+interface DecryptedCredentials {
+	accessKeyId: string;
+	secretAccessKey: string;
+}
+
+async function decryptCredentials(encrypted: string): Promise<DecryptedCredentials> {
+	const decrypted = await decrypt(encrypted, getEncryptionKey());
+	if (!decrypted) throw new Error("Failed to decrypt credentials");
+	return JSON.parse(decrypted);
+}
+
+export async function getS3Client(connectionId: string): Promise<S3Client> {
+	const connection = await getBucketConnection(connectionId);
+
+	if (!connection) {
+		throw new Error("Connection not found");
+	}
+
+	const creds = await decryptCredentials(connection.accessKeyId);
 
 	const config: S3ClientConfig = {
 		credentials: {
-			accessKeyId: credentials.accessKeyId,
-			secretAccessKey: credentials.secretAccessKey,
+			accessKeyId: creds.accessKeyId,
+			secretAccessKey: creds.secretAccessKey,
 		},
-		region: credentials.region || "us-east-1",
+		region: connection.region || "us-east-1",
 	};
 
-	// If a custom endpoint is provided (e.g., for Cloudflare R2, DigitalOcean Spaces, etc.)
-	if (credentials.endpoint) {
-		config.endpoint = credentials.endpoint;
-		// For many non-AWS S3 providers, path style is required or preferred
+	if (connection.endpoint) {
+		config.endpoint = connection.endpoint;
 		config.forcePathStyle = true;
+		config.region = connection.region || "auto";
 	}
 
 	return new S3Client(config);

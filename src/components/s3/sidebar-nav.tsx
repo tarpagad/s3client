@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Settings } from "lucide-react";
+import { LayoutDashboard, Settings, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -10,11 +10,17 @@ export function SidebarNav() {
 
 	const routes = [
 		{
-			label: "Buckets",
+			label: "Connections",
 			icon: LayoutDashboard,
 			href: "/dashboard",
 			active:
-				pathname === "/dashboard" || pathname.startsWith("/dashboard/buckets"),
+				pathname === "/dashboard" || pathname.startsWith("/dashboard/connections"),
+		},
+		{
+			label: "Add Connection",
+			icon: Plus,
+			href: "/dashboard/connections/new",
+			active: pathname === "/dashboard/connections/new",
 		},
 		{
 			label: "Settings",

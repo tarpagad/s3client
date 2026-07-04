@@ -1,9 +1,10 @@
 import { Cloud, Search } from "lucide-react";
 import { redirect } from "next/navigation";
-import { getS3Credentials } from "@/actions/auth-actions";
-import { DisconnectButton } from "@/components/s3/disconnect-button";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { SidebarNav } from "@/components/s3/sidebar-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SignOutButton } from "@/components/s3/sign-out-button";
 import { Input } from "@/components/ui/input";
 
 export default async function DashboardLayout({
@@ -11,15 +12,23 @@ export default async function DashboardLayout({
 }: {
 	children: React.ReactNode;
 }) {
-	const credentials = await getS3Credentials();
+	const session = await auth.api.getSession({
+		headers: await headers(),
+	});
 
-	if (!credentials) {
-		redirect("/");
+	if (!session) {
+		redirect("/sign-in");
 	}
+
+	const initials = session.user.name
+		?.split(" ")
+		.map((n) => n[0])
+		.join("")
+		.toUpperCase()
+		.slice(0, 2);
 
 	return (
 		<div className="flex h-screen bg-background overflow-hidden">
-			{/* Sidebar */}
 			<aside className="w-64 border-r border-border/40 bg-card/30 hidden md:flex flex-col">
 				<div className="p-6">
 					<div className="flex items-center gap-2 font-bold text-xl tracking-tight">
@@ -35,13 +44,11 @@ export default async function DashboardLayout({
 				</nav>
 
 				<div className="p-4 border-t border-border/40">
-					<DisconnectButton />
+					<SignOutButton />
 				</div>
 			</aside>
 
-			{/* Main Content */}
 			<div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-				{/* Top Header */}
 				<header className="h-16 border-b border-border/40 flex items-center justify-between px-6 bg-card/10">
 					<div className="flex items-center gap-4 flex-1 max-w-md">
 						<div className="relative w-full">
@@ -55,13 +62,15 @@ export default async function DashboardLayout({
 					</div>
 					<div className="flex items-center gap-4">
 						<ThemeToggle />
-						<div className="w-8 h-8 rounded-full bg-linear-to-br from-primary to-primary/50 flex items-center justify-center text-[10px] font-bold text-primary-foreground shadow-sm">
-							AWS
+						<div
+							className="w-8 h-8 rounded-full bg-linear-to-br from-primary to-primary/50 flex items-center justify-center text-[10px] font-bold text-primary-foreground shadow-sm"
+							title={session.user.email}
+						>
+							{initials || "U"}
 						</div>
 					</div>
 				</header>
 
-				{/* Viewport */}
 				<main className="flex-1 overflow-y-auto p-6 bg-[radial-gradient(circle_at_center,var(--tw-gradient-stops))] from-primary/2 via-transparent to-transparent">
 					{children}
 				</main>

@@ -15,12 +15,14 @@ import { Button } from "@/components/ui/button";
 import type { S3ObjectInfo } from "@/lib/types";
 
 interface PreviewModalProps {
+	connectionId: string;
 	bucketName: string;
 	object: S3ObjectInfo;
 	onClose: () => void;
 }
 
 export function PreviewModal({
+	connectionId,
 	bucketName,
 	object,
 	onClose,
@@ -37,14 +39,13 @@ export function PreviewModal({
 			setLoading(true);
 			const ext = object.extension?.toLowerCase() || "";
 
-			// Determine type
 			if (["jpg", "jpeg", "png", "gif", "svg", "webp"].includes(ext)) {
 				setPreviewType("image");
-				const result = await getDownloadUrl(bucketName, object.key);
+				const result = await getDownloadUrl(connectionId, bucketName, object.key);
 				if (result.url) setDownloadUrl(result.url);
 			} else if (["pdf"].includes(ext)) {
 				setPreviewType("pdf");
-				const result = await getDownloadUrl(bucketName, object.key);
+				const result = await getDownloadUrl(connectionId, bucketName, object.key);
 				if (result.url) setDownloadUrl(result.url);
 			} else if (
 				[
@@ -61,7 +62,7 @@ export function PreviewModal({
 				].includes(ext)
 			) {
 				setPreviewType("text");
-				const result = await getFileContent(bucketName, object.key);
+				const result = await getFileContent(connectionId, bucketName, object.key);
 				if (result.content) setTextContent(result.content);
 				if (result.error) toast.error(result.error);
 			} else {
@@ -72,10 +73,10 @@ export function PreviewModal({
 		}
 
 		initPreview();
-	}, [bucketName, object]);
+	}, [connectionId, bucketName, object]);
 
 	async function handleDownload() {
-		const result = await getDownloadUrl(bucketName, object.key);
+		const result = await getDownloadUrl(connectionId, bucketName, object.key);
 		if (result.url) {
 			window.open(result.url, "_blank");
 		} else {
@@ -86,7 +87,6 @@ export function PreviewModal({
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
 			<div className="bg-card border border-border/40 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-				{/* Header */}
 				<div className="p-4 border-b flex items-center justify-between bg-muted/30">
 					<div className="flex items-center gap-3">
 						<div className="p-2 bg-primary/10 rounded-lg text-primary">
@@ -130,7 +130,6 @@ export function PreviewModal({
 					</div>
 				</div>
 
-				{/* Content */}
 				<div className="flex-1 overflow-auto bg-muted/10 p-4 md:p-8 flex items-center justify-center min-h-[300px]">
 					{loading ? (
 						<div className="flex flex-col items-center gap-3">
@@ -176,7 +175,6 @@ export function PreviewModal({
 					)}
 				</div>
 
-				{/* Footer/Info */}
 				<div className="p-3 border-t bg-muted/30 flex items-center justify-between text-[11px] text-muted-foreground">
 					<div className="flex gap-4">
 						<span>

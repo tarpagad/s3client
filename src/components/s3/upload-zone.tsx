@@ -7,6 +7,7 @@ import { uploadFile } from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
 
 interface UploadZoneProps {
+	connectionId: string;
 	bucketName: string;
 	prefix: string;
 	onSuccess: () => void;
@@ -18,7 +19,7 @@ interface FileStatus {
 	error?: string;
 }
 
-export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
+export function UploadZone({ connectionId, bucketName, prefix, onSuccess }: UploadZoneProps) {
 	const [isDragActive, setIsDragActive] = useState(false);
 	const [files, setFiles] = useState<FileStatus[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
@@ -37,7 +38,6 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 		if (e.target.files && e.target.files.length > 0) {
 			addFiles(Array.from(e.target.files));
 		}
-		// Reset input value so same files can be selected again if needed
 		if (fileInputRef.current) {
 			fileInputRef.current.value = "";
 		}
@@ -73,12 +73,10 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 
 		const uploadedFiles = [...files];
 
-		// Upload sequentially to avoid overwhelming server or hitting limits
 		for (let i = 0; i < uploadedFiles.length; i++) {
 			const fileStatus = uploadedFiles[i];
-			if (fileStatus.status === "success") continue; // Skip already uploaded
+			if (fileStatus.status === "success") continue;
 
-			// Update status to uploading
 			uploadedFiles[i] = { ...fileStatus, status: "uploading" };
 			setFiles([...uploadedFiles]);
 
@@ -87,7 +85,7 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 			const key = prefix + fileStatus.file.name;
 
 			try {
-				const result = await uploadFile(bucketName, key, formData, isPublic);
+				const result = await uploadFile(connectionId, bucketName, key, formData, isPublic);
 				if (result.success) {
 					uploadedFiles[i] = { ...fileStatus, status: "success" };
 					successCount++;
@@ -117,8 +115,6 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 				`Uploaded ${successCount} file${successCount !== 1 ? "s" : ""}`,
 			);
 			onSuccess();
-			// Clear successful uploads after a delay? Or just keep them visible?
-			// For now, let's remove successful ones so user can see failures or upload more
 			setTimeout(() => {
 				setFiles((prev) => prev.filter((f) => f.status !== "success"));
 			}, 2000);
@@ -197,7 +193,7 @@ export function UploadZone({ bucketName, prefix, onSuccess }: UploadZoneProps) {
 								</div>
 							))}
 						</div>
-						
+
 						<div className="flex items-center space-x-2 bg-muted/50 py-2 px-4 rounded-full border border-primary/20">
 							<input
 								type="checkbox"

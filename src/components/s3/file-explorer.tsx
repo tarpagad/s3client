@@ -40,6 +40,7 @@ import { PreviewModal } from "./preview-modal";
 import { UploadZone } from "./upload-zone";
 
 interface FileExplorerProps {
+	connectionId: string;
 	bucketName: string;
 	initialObjects: S3ObjectInfo[];
 	initialNextToken?: string;
@@ -47,6 +48,7 @@ interface FileExplorerProps {
 }
 
 export function FileExplorer({
+	connectionId,
 	bucketName,
 	initialObjects,
 	initialNextToken,
@@ -73,14 +75,13 @@ export function FileExplorer({
 	const [totalItems, setTotalItems] = useState<number | null>(null);
 	const [tokenCache, setTokenCache] = useState<(string | undefined)[]>([
 		undefined,
-	]); // Page 1 is always undefined token
+	]);
 	const [isSearching, setIsSearching] = useState(false);
 	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 	const [isDragActive, setIsDragActive] = useState(false);
 	const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
 	const [showConfirmUpload, setShowConfirmUpload] = useState(false);
 
-    // Clear selection on navigation/search/filter
     React.useEffect(() => {
         setSelectedKeys(new Set());
     }, [prefix, searchQuery, objects]);
@@ -105,22 +106,20 @@ export function FileExplorer({
 
     const handleBulkDelete = async () => {
         if (!confirm(`Are you sure you want to delete ${selectedKeys.size} items?`)) return;
-        
+
         const keysToDelete = Array.from(selectedKeys);
-        
-        // Optimistic update
+
         const previousObjects = [...objects];
         setObjects(objects.filter(obj => !selectedKeys.has(obj.key)));
         setSelectedKeys(new Set());
 
         try {
-            // New bulk delete action
             const { deleteObjects } = await import("@/actions/s3-actions");
-            const result = await deleteObjects(bucketName, keysToDelete);
-            
+            const result = await deleteObjects(connectionId, bucketName, keysToDelete);
+
             if (result.success) {
                 toast.success("Items deleted successfully");
-                fetchObjects(prefix); // Refresh to be sure
+                fetchObjects(prefix);
             } else {
                 setObjects(previousObjects);
                 toast.error(result.error || "Failed to delete items");
@@ -133,12 +132,12 @@ export function FileExplorer({
 
     const handleBulkMakePublic = async () => {
         if (!confirm(`Make ${selectedKeys.size} items public?`)) return;
-        
+
         const keys = Array.from(selectedKeys);
         const { makePublic } = await import("@/actions/s3-actions");
-        
+
         toast.promise(
-            Promise.all(keys.map(key => makePublic(bucketName, key))),
+            Promise.all(keys.map(key => makePublic(connectionId, bucketName, key))),
             {
                 loading: "Updating permissions...",
                 success: () => {
@@ -149,22 +148,19 @@ export function FileExplorer({
             }
         );
     };
-    
-    // Download logic: trigger individual downloads
+
     const handleBulkDownload = async () => {
         const keys = Array.from(selectedKeys);
         if (keys.length > 10 && !confirm(`You are about to download ${keys.length} files. This may trigger multiple popups. Continue?`)) return;
 
         const { getDownloadUrl } = await import("@/actions/s3-actions");
-        
+
         let started = 0;
         for (const key of keys) {
-             // Skip folders for download
              if (key.endsWith("/")) continue;
 
-             const res = await getDownloadUrl(bucketName, key);
+             const res = await getDownloadUrl(connectionId, bucketName, key);
              if (res.url) {
-                 // Create hidden link to trigger download
                  const link = document.createElement('a');
                  link.href = res.url;
                  link.download = key.split('/').pop() || 'download';
@@ -172,7 +168,6 @@ export function FileExplorer({
                  link.click();
                  document.body.removeChild(link);
                  started++;
-                 // Small delay to prevent browser blocking
                  await new Promise(r => setTimeout(r, 200));
              }
         }
@@ -241,7 +236,6 @@ export function FileExplorer({
 		return <File size={40} className="text-muted-foreground" />;
 	};
 
-	// Handle Date serialization from Server Actions
 	const safeDate = (date: Date | string | undefined): Date | undefined => {
 		if (!date) return undefined;
 		return new Date(date);
@@ -251,14 +245,14 @@ export function FileExplorer({
 		setLoading(true);
 		try {
 			const data = await listObjects(
+				connectionId,
 				bucketName,
 				newPrefix,
 				initialPrefs.itemsPerPage,
 				token,
 				sortStr || sortBy,
 			);
-			
-			// Fix Date objects coming from Server Action (serialized as strings)
+
 			const fixedObjects = data.objects.map(obj => ({
 				...obj,
 				lastModified: safeDate(obj.lastModified)
@@ -271,27 +265,19 @@ export function FileExplorer({
 			if (!token) {
 				setPrevTokens([]);
 				setCurrentPage(1);
-				// Keep cache valid for sequential requests, reset on full refresh
-				if (!nextToken) {
-					// Only reset if we are starting fresh or jumping crazily
-					// Actually, keeping the cache is fine.
-				}
-				// Use the total from the response
 				if (data.totalObjects !== undefined) {
 					setTotalItems(data.totalObjects);
 				}
 			}
 
-			// Update token cache for the NEXT page
 			if (data.nextToken) {
 				setTokenCache((prev) => {
 					const next = [...prev];
-					const nextPageIndex = currentPage; // current page is token index - 1
+					const nextPageIndex = currentPage;
 					next[nextPageIndex] = data.nextToken;
 					return next;
 				});
 			} else {
-                 // Explicitly clear future cache if no next token
                  setTokenCache(prev => prev.slice(0, currentPage));
             }
 			setIsSearching(false);
@@ -307,10 +293,6 @@ export function FileExplorer({
 	async function handleNextPage() {
 		if (!nextToken) return;
 		setPrevTokens([...prevTokens, nextToken]);
-		// Need to increment page BEFORE fetching for the cache logic to work for *next* page
-        // But the previous implementation logic was: page 1 (no token) -> loads. nextToken set.
-        // Click Next -> fetch(nextToken). 
-		// Actually, let's keep it simple:
         const nextPageNum = currentPage + 1;
         setCurrentPage(nextPageNum);
 		await fetchObjects(prefix, nextToken);
@@ -319,7 +301,7 @@ export function FileExplorer({
 	async function handlePrevPage() {
 		if (currentPage === 1) return;
 		const newPrevTokens = [...prevTokens];
-		newPrevTokens.pop(); // Remove current
+		newPrevTokens.pop();
 		const lastToken = newPrevTokens[newPrevTokens.length - 1];
 		setPrevTokens(newPrevTokens);
         const prevPageNum = currentPage - 1;
@@ -332,10 +314,8 @@ export function FileExplorer({
 		if (totalItems && page > Math.ceil(totalItems / initialPrefs.itemsPerPage))
 			return;
 
-		// If we have the token in cache, use it
 		if (page <= tokenCache.length) {
 			const token = tokenCache[page - 1];
-			// Correct prevTokens history
 			const newPrevTokens = [];
 			for (let i = 1; i < page; i++) {
 				newPrevTokens.push(tokenCache[i]);
@@ -344,13 +324,6 @@ export function FileExplorer({
             setCurrentPage(page);
 			await fetchObjects(prefix, token);
 		} else {
-            // New logic: with simple offset pagination server-side, we technically *could* construct the token
-            // But to stick to the opaque token pattern, and since we don't have the "construct token" logic exposed to client,
-            // we will sadly have to forbid jumping to unknown pages OR accept that the user has to click "Next"
-            // HOWEVER, since I know the server implementation uses base64(json({offset: N})), 
-            // I CAN optimistically construct it here if I really wanted to, but that leaks implementation details.
-            
-            // Allow sequential jump only for now or notify
             toast.info("Please navigate sequentially to caching pages.");
 		}
 	}
@@ -364,14 +337,13 @@ export function FileExplorer({
 		setLoading(true);
 		setIsSearching(true);
 		try {
-			const data = await searchObjects(bucketName, prefix, searchQuery);
-            // Fix Dates
+			const data = await searchObjects(connectionId, bucketName, prefix, searchQuery);
 			const fixedObjects = data.objects.map(obj => ({
 				...obj,
 				lastModified: safeDate(obj.lastModified)
 			}));
 			setObjects(fixedObjects);
-			setNextToken(undefined); 
+			setNextToken(undefined);
 			setTotalItems(data.totalObjects ?? data.objects.length);
 		} catch (error: unknown) {
 			toast.error(error instanceof Error ? error.message : "Search failed");
@@ -392,13 +364,9 @@ export function FileExplorer({
 				obj.name.toLowerCase().includes(searchQuery.toLowerCase()),
 			);
 
-	// Client-side sort is now just for display consistency on the current page
-    // The server handles the "True" sort
 	const sortedObjects = [...filteredObjects].sort((a, b) => {
-		// Folders always come first
 		if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
 
-        // Use the same logic as server for consistent in-page display
 		if (sortBy === "date-desc") {
 			return (
 				(b.lastModified?.getTime() || 0) - (a.lastModified?.getTime() || 0)
@@ -429,15 +397,14 @@ export function FileExplorer({
 	async function handleDelete(key: string) {
 		if (!confirm("Are you sure you want to delete this?")) return;
 
-		// Optimistic update
 		const previousObjects = [...objects];
 		setObjects(objects.filter((obj) => obj.key !== key));
 
-		const result = await deleteObject(bucketName, key);
+		const result = await deleteObject(connectionId, bucketName, key);
 		if (result.success) {
 			toast.success("Deleted successfully");
 		} else {
-			setObjects(previousObjects); // Rollback
+			setObjects(previousObjects);
 			toast.error(result.error || "Failed to delete");
 		}
 	}
@@ -464,7 +431,6 @@ export function FileExplorer({
 	function onGlobalDragLeave(e: React.DragEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		// Only deactivate if we're leaving the container entirely
 		if (e.relatedTarget === null) {
 			setIsDragActive(false);
 		}
@@ -481,7 +447,7 @@ export function FileExplorer({
 	}
 
 	return (
-		<div 
+		<div
 			className="space-y-4 relative"
 			onDragOver={onGlobalDragOver}
 			onDragLeave={onGlobalDragLeave}
@@ -587,6 +553,7 @@ export function FileExplorer({
 			{showUpload && (
 				<div className="animate-in slide-in-from-top duration-300">
 					<UploadZone
+						connectionId={connectionId}
 						bucketName={bucketName}
 						prefix={prefix}
 						onSuccess={() => {
@@ -651,8 +618,8 @@ export function FileExplorer({
 							<thead className="bg-muted/50 text-muted-foreground font-medium border-b">
 								<tr>
                                     <th className="px-4 py-3 w-[40px]">
-                                        <input 
-                                            type="checkbox" 
+                                        <input
+                                            type="checkbox"
                                             className="rounded border-input"
                                             checked={selectedKeys.size === objects.length && objects.length > 0}
                                             onChange={toggleSelectAll}
@@ -685,15 +652,14 @@ export function FileExplorer({
                                             selectedKeys.has(obj.key) && "bg-primary/5 hover:bg-primary/10"
                                         )}
                                         onClick={(e) => {
-                                            // Select on row click if ctrl/cmd held
                                             if (e.ctrlKey || e.metaKey) {
                                                 toggleSelection(obj.key);
                                             }
                                         }}
 									>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="checkbox" 
+                                            <input
+                                                type="checkbox"
                                                 className="rounded border-input"
                                                 checked={selectedKeys.has(obj.key)}
                                                 onChange={() => toggleSelection(obj.key)}
@@ -743,7 +709,6 @@ export function FileExplorer({
 															const url = `https://${bucketName}.s3.amazonaws.com/${obj.key}`;
 															navigator.clipboard.writeText(url);
 															toast.success("Public URL copied");
-															// e.preventDefault(); // Unnecessary with stopPropagation
 														}}
 														title="Copy Public URL"
 													>
@@ -751,6 +716,7 @@ export function FileExplorer({
 													</Button>
 												)}
 												<ObjectActions
+													connectionId={connectionId}
 													bucketName={bucketName}
 													object={obj}
 													onRefresh={() => fetchObjects(prefix)}
@@ -784,8 +750,8 @@ export function FileExplorer({
 							>
 								<CardContent className="p-4 flex flex-col items-center justify-center text-center space-y-2">
                                     <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity data-[selected=true]:opacity-100" data-selected={selectedKeys.has(obj.key)}>
-                                        <input 
-                                            type="checkbox" 
+                                        <input
+                                            type="checkbox"
                                             className="rounded border-input h-4 w-4 shadow-sm"
                                             checked={selectedKeys.has(obj.key)}
                                             onChange={() => toggleSelection(obj.key)}
@@ -817,6 +783,7 @@ export function FileExplorer({
 										)}
 										<div className="bg-background/80 backdrop-blur-sm rounded-md">
 											<ObjectActions
+												connectionId={connectionId}
 												bucketName={bucketName}
 												object={obj}
 												onRefresh={() => fetchObjects(prefix)}
@@ -832,7 +799,6 @@ export function FileExplorer({
 				)}
 			</div>
 
-			{/* Pagination Controls */}
 			{(nextToken || currentPage > 1 || totalItems || isSearching) && (
 				<div className="flex items-center justify-between px-2 py-4 border-t border-border/40">
 					<div className="text-sm text-muted-foreground">
@@ -961,6 +927,7 @@ export function FileExplorer({
 
 			{previewObject && (
 				<PreviewModal
+					connectionId={connectionId}
 					bucketName={bucketName}
 					object={previewObject}
 					onClose={() => setPreviewObject(null)}
@@ -969,6 +936,7 @@ export function FileExplorer({
 
 			{showCreateFolder && (
 				<CreateFolderDialog
+					connectionId={connectionId}
 					bucketName={bucketName}
 					prefix={prefix}
 					onClose={() => setShowCreateFolder(false)}
@@ -978,6 +946,7 @@ export function FileExplorer({
 
 			{showConfirmUpload && (
 				<ConfirmUploadDialog
+					connectionId={connectionId}
 					bucketName={bucketName}
 					prefix={prefix}
 					files={droppedFiles}

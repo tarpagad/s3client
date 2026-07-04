@@ -13,6 +13,7 @@ interface FileStatus {
 }
 
 interface ConfirmUploadDialogProps {
+	connectionId: string;
 	bucketName: string;
 	prefix: string;
 	files: File[];
@@ -21,6 +22,7 @@ interface ConfirmUploadDialogProps {
 }
 
 export function ConfirmUploadDialog({
+	connectionId,
 	bucketName,
 	prefix,
 	files: initialFiles,
@@ -52,7 +54,7 @@ export function ConfirmUploadDialog({
 			const key = prefix + fileStatus.file.name;
 
 			try {
-				const result = await uploadFile(bucketName, key, formData, isPublic);
+				const result = await uploadFile(connectionId, bucketName, key, formData, isPublic);
 				if (result.success) {
 					updatedFiles[i] = { ...fileStatus, status: "success" };
 					successCount++;
@@ -80,7 +82,6 @@ export function ConfirmUploadDialog({
 		if (successCount > 0) {
 			toast.success(`Uploaded ${successCount} file${successCount !== 1 ? "s" : ""}`);
 			onSuccess();
-			// If all succeeded, close after a short delay
 			if (failCount === 0) {
 				setTimeout(onClose, 1500);
 			}

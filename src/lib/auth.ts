@@ -1,17 +1,24 @@
 import { betterAuth } from "better-auth";
+import { nextCookies } from "better-auth/next-js";
+import { getDb } from "@/db";
 
 export const auth = betterAuth({
-	// Disable database requirement by using stateless cookie-based sessions
+	database: getDb(),
+	emailAndPassword: {
+		enabled: true,
+	},
 	session: {
 		cookieCache: {
 			enabled: true,
-			maxAge: 7 * 24 * 60 * 60, // 7 days
+			maxAge: 7 * 24 * 60 * 60,
 			strategy: "jwe",
-			refreshCache: true,
 		},
 	},
 	account: {
 		storeStateStrategy: "cookie",
-		storeAccountCookie: true, // Crucial for database-less OAuth flows
+		storeAccountCookie: true,
 	},
+	plugins: [nextCookies()],
 });
+
+export type Session = typeof auth.$Infer.Session;

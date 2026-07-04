@@ -20,9 +20,11 @@ import type {
 	S3ObjectInfo,
 } from "@/lib/types";
 
-export async function listBuckets(): Promise<BucketInfo[]> {
+export async function listBuckets(
+	connectionId: string
+): Promise<BucketInfo[]> {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		const response = await client.send(new ListBucketsCommand({}));
 
 		return (response.Buckets || []).map((bucket) => ({
@@ -38,6 +40,7 @@ export async function listBuckets(): Promise<BucketInfo[]> {
 }
 
 export async function listObjects(
+	connectionId: string,
 	bucket: string,
 	prefix: string = "",
 	maxKeys: number = 100,
@@ -45,9 +48,8 @@ export async function listObjects(
 	sortBy: "date-desc" | "date-asc" | "name-asc" | "name-desc" = "date-desc",
 ): Promise<ListObjectsResponse> {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 
-		// Parse token to get offset (simple pagination now)
 		let offset = 0;
 		if (continuationToken) {
 			try {
@@ -60,8 +62,6 @@ export async function listObjects(
 			}
 		}
 
-		// 1. Fetch ALL folders and files (up to safety limit)
-		// We need everything to sort correctly
 		const allFolders: S3ObjectInfo[] = [];
 		const allFiles: {
 			Key: string;
@@ -83,11 +83,9 @@ export async function listObjects(
 			});
 			const response = await client.send(command);
 
-			// Folders (CommonPrefixes)
 			if (response.CommonPrefixes) {
 				for (const p of response.CommonPrefixes) {
 					const prefixStr = p.Prefix ?? "";
-					// Deduplicate folders if we hit multiple pages
 					if (!allFolders.some((f) => f.key === prefixStr)) {
 						const name = prefixStr.slice(0, -1).split("/").pop() || "";
 						allFolders.push({
@@ -99,16 +97,23 @@ export async function listObjects(
 				}
 			}
 
-			// Files (Contents)
 			if (response.Contents) {
 				for (const c of response.Contents) {
-					if (c.Key === prefix) continue; // Skip the folder object itself
-					allFiles.push({
-						Key: c.Key || "",
-						LastModified: c.LastModified,
-						Size: c.Size,
-						ETag: c.ETag,
-					});
+					if (c.Key === prefix) continue;
+					const key = c.Key || "";
+					if (key.endsWith("/") && key !== prefix) {
+						const name = key.slice(0, -1).split("/").pop() || "";
+						if (!allFolders.some((f) => f.key === key)) {
+							allFolders.push({ key, name, type: "folder" as const });
+						}
+					} else {
+						allFiles.push({
+							Key: key,
+							LastModified: c.LastModified,
+							Size: c.Size,
+							ETag: c.ETag,
+						});
+					}
 				}
 			}
 
@@ -116,11 +121,8 @@ export async function listObjects(
 			s3Token = response.NextContinuationToken;
 		} while (s3Token && totalFetched < SAFETY_LIMIT);
 
-		// 2. Sort Logic
-		// Folders always alphabetical
 		allFolders.sort((a, b) => a.name.localeCompare(b.name));
 
-		// Files sorting
 		allFiles.sort((a, b) => {
 			if (sortBy === "date-desc") {
 				return (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0);
@@ -139,9 +141,6 @@ export async function listObjects(
 			return 0;
 		});
 
-		// 3. Pagination & Slicing
-		// Combined list: Folders first, then Files
-		// We map files to S3ObjectInfo structure (without ACLs yet)
 		const allFilesMapped: S3ObjectInfo[] = allFiles.map((f) => {
 			const name = f.Key.split("/").pop() || "";
 			const extension = name.split(".").pop();
@@ -153,15 +152,13 @@ export async function listObjects(
 				etag: f.ETag,
 				type: "file" as const,
 				extension,
-				isPublic: false, // Placeholder
+				isPublic: false,
 			};
 		});
 
 		const combined = [...allFolders, ...allFilesMapped];
 		const paginatedItems = combined.slice(offset, offset + maxKeys);
 
-		// 4. Optimize ACL Fetching
-		// Only fetch ACLs for the *files* in the current page
 		const itemsWithAcl = await Promise.all(
 			paginatedItems.map(async (item) => {
 				if (item.type !== "file") return item;
@@ -177,14 +174,12 @@ export async function listObjects(
 							grant.Permission === "READ",
 					);
 					return { ...item, isPublic };
-				} catch (e) {
-					// console.warn(`Failed to fetch ACL for ${item.key}`, e);
+				} catch {
 					return item;
 				}
 			}),
 		);
 
-		// 5. Prepare Next Token
 		let nextToken: string | undefined;
 		if (offset + maxKeys < combined.length) {
 			nextToken = Buffer.from(
@@ -205,16 +200,18 @@ export async function listObjects(
 	}
 }
 
-export async function deleteObjects(bucket: string, keys: string[]) {
+export async function deleteObjects(
+	connectionId: string,
+	bucket: string,
+	keys: string[],
+) {
 	try {
-		const client = await getS3Client();
-		
+		const client = await getS3Client(connectionId);
+
 		if (keys.length === 0) return { success: true };
 
 		const objects = keys.map(key => ({ Key: key }));
 
-		// S3 deleteObjects is limited to 1000 keys per request
-		// We'll batch it just in case, though UI selection limits likely apply
 		const batchSize = 1000;
 		for (let i = 0; i < objects.length; i += batchSize) {
 			const batch = objects.slice(i, i + batchSize);
@@ -237,9 +234,13 @@ export async function deleteObjects(bucket: string, keys: string[]) {
 	}
 }
 
-export async function deleteObject(bucket: string, key: string) {
+export async function deleteObject(
+	connectionId: string,
+	bucket: string,
+	key: string,
+) {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		await client.send(
 			new DeleteObjectCommand({
 				Bucket: bucket,
@@ -258,14 +259,14 @@ export async function deleteObject(bucket: string, key: string) {
 }
 
 export async function renameObject(
+	connectionId: string,
 	bucket: string,
 	oldKey: string,
 	newKey: string,
 ) {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 
-		// S3 doesn't have "rename", we must Copy + Delete
 		await client.send(
 			new CopyObjectCommand({
 				Bucket: bucket,
@@ -291,15 +292,18 @@ export async function renameObject(
 	}
 }
 
-export async function getDownloadUrl(bucket: string, key: string) {
+export async function getDownloadUrl(
+	connectionId: string,
+	bucket: string,
+	key: string,
+) {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		const command = new GetObjectCommand({
 			Bucket: bucket,
 			Key: key,
 		});
 
-		// URL expires in 1 hour
 		const url = await getSignedUrl(client, command, { expiresIn: 3600 });
 		return { url };
 	} catch (error: unknown) {
@@ -314,13 +318,14 @@ export async function getDownloadUrl(bucket: string, key: string) {
 }
 
 export async function uploadFile(
+	connectionId: string,
 	bucket: string,
 	key: string,
 	fileData: FormData,
 	isPublic: boolean = false,
 ) {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		const file = fileData.get("file") as File;
 
 		if (!file) {
@@ -350,9 +355,13 @@ export async function uploadFile(
 	}
 }
 
-export async function makePublic(bucket: string, key: string) {
+export async function makePublic(
+	connectionId: string,
+	bucket: string,
+	key: string,
+) {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		await client.send(
 			new PutObjectAclCommand({
 				Bucket: bucket,
@@ -371,9 +380,13 @@ export async function makePublic(bucket: string, key: string) {
 	}
 }
 
-export async function getFileContent(bucket: string, key: string) {
+export async function getFileContent(
+	connectionId: string,
+	bucket: string,
+	key: string,
+) {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		const response = await client.send(
 			new GetObjectCommand({
 				Bucket: bucket,
@@ -395,21 +408,19 @@ export async function getFileContent(bucket: string, key: string) {
 		};
 	}
 }
-/**
- * Performs a server-side search for objects within a specific prefix.
- * Matches both folders and files.
- */
+
 export async function searchObjects(
+	connectionId: string,
 	bucket: string,
 	prefix: string,
 	query: string,
 ): Promise<ListObjectsResponse> {
 	if (!query.trim()) {
-		return listObjects(bucket, prefix);
+		return listObjects(connectionId, bucket, prefix);
 	}
 
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		const allFolders: S3ObjectInfo[] = [];
 		const allFiles: {
 			Key: string;
@@ -421,7 +432,6 @@ export async function searchObjects(
 
 		const lowerQuery = query.toLowerCase();
 
-		// Step 1: Accumulate all matches across all pages
 		do {
 			const response = await client.send(
 				new ListObjectsV2Command({
@@ -432,7 +442,6 @@ export async function searchObjects(
 				}),
 			);
 
-			// Match folders
 			const folders: S3ObjectInfo[] = (response.CommonPrefixes || [])
 				.map((p) => {
 					const prefixStr = p.Prefix ?? "";
@@ -443,7 +452,6 @@ export async function searchObjects(
 
 			allFolders.push(...folders);
 
-			// Match files
 			const files = (response.Contents || [])
 				.filter((c) => {
 					if (c.Key === prefix) return false;
@@ -461,10 +469,8 @@ export async function searchObjects(
 			continuationToken = response.NextContinuationToken;
 		} while (continuationToken);
 
-		// Sort folders alphabetically
 		allFolders.sort((a, b) => a.name.localeCompare(b.name));
 
-		// Step 2: Batch ACL checks for MATCHED files (limit search results to 100 for safety)
 		const matchedFilesToProcess = allFiles.slice(0, 100);
 		const batchSize = 10;
 		const finalFiles: S3ObjectInfo[] = [];
@@ -488,7 +494,7 @@ export async function searchObjects(
 									"http://acs.amazonaws.com/groups/global/AllUsers" &&
 								grant.Permission === "READ",
 						);
-					} catch (_e) {}
+					} catch {}
 
 					return {
 						key,
@@ -515,16 +521,13 @@ export async function searchObjects(
 	}
 }
 
-/**
- * Counts the total number of items in a specific prefix (folder).
- * This is optimized for speed by not fetching ACLs or metadata.
- */
 export async function countObjects(
+	connectionId: string,
 	bucket: string,
 	prefix: string = "",
 ): Promise<{ count: number }> {
 	try {
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		let totalCount = 0;
 		let continuationToken: string | undefined;
 
@@ -535,12 +538,11 @@ export async function countObjects(
 					Prefix: prefix,
 					Delimiter: "/",
 					ContinuationToken: continuationToken,
-					MaxKeys: 1000, // Fetch in large chunks for counting
+					MaxKeys: 1000,
 				}),
 			);
 
 			totalCount += response.CommonPrefixes?.length || 0;
-			// We only count files that aren't the prefix itself
 			const files = (response.Contents || []).filter((c) => c.Key !== prefix);
 			totalCount += files.length;
 
@@ -553,23 +555,18 @@ export async function countObjects(
 		return { count: 0 };
 	}
 }
-/**
- * Creates a new folder (empty object with key ending in /)
- * Checks for duplicates before creating.
- */
+
 export async function createFolder(
+	connectionId: string,
 	bucket: string,
 	prefix: string,
 	folderName: string,
 ) {
 	try {
-		// Basic validation
 		if (!folderName.trim()) {
 			throw new Error("Folder name cannot be empty");
 		}
 
-		// S3 Recommended safe naming: avoid characters like \ ^ ` > < { } [ ] # % ~ |
-		// And definitely no / in the name itself
 		const invalidChars = /[\\^`><{}[\]#%~|/]/;
 		if (invalidChars.test(folderName)) {
 			throw new Error(
@@ -577,10 +574,9 @@ export async function createFolder(
 			);
 		}
 
-		const client = await getS3Client();
+		const client = await getS3Client(connectionId);
 		const key = `${prefix}${folderName}/`;
 
-		// Duplicate check
 		const response = await client.send(
 			new ListObjectsV2Command({
 				Bucket: bucket,

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 interface CreateFolderDialogProps {
+	connectionId: string;
 	bucketName: string;
 	prefix: string;
 	onClose: () => void;
@@ -16,6 +17,7 @@ interface CreateFolderDialogProps {
 }
 
 export function CreateFolderDialog({
+	connectionId,
 	bucketName,
 	prefix,
 	onClose,
@@ -32,7 +34,7 @@ export function CreateFolderDialog({
 
 		setIsCreating(true);
 		try {
-			const result = await createFolder(bucketName, prefix, folderName.trim());
+			const result = await createFolder(connectionId, bucketName, prefix, folderName.trim());
 			if (result.success) {
 				toast.success(`Folder "${folderName}" created successfully`);
 				onSuccess();
