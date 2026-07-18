@@ -13,14 +13,16 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getDownloadUrl, makePublic } from "@/actions/s3-actions";
 import { Button } from "@/components/ui/button";
-import type { S3ObjectInfo } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { BucketConnectionType, S3ObjectInfo } from "@/lib/types";
+import { cn, getPublicObjectUrl } from "@/lib/utils";
 import { PreviewModal } from "./preview-modal";
 import { RenameDialog } from "./rename-dialog";
 
 interface ObjectActionsProps {
 	connectionId: string;
 	bucketName: string;
+	connectionType: BucketConnectionType;
+	r2PublicUrl?: string;
 	object: S3ObjectInfo;
 	onRefresh: () => void;
 	onDelete: (key: string) => void;
@@ -30,6 +32,8 @@ interface ObjectActionsProps {
 export function ObjectActions({
 	connectionId,
 	bucketName,
+	connectionType,
+	r2PublicUrl,
 	object,
 	onRefresh,
 	onDelete,
@@ -88,7 +92,7 @@ export function ObjectActions({
 	}
 
 	function getPublicUrl() {
-		return `https://${bucketName}.s3.amazonaws.com/${object.key}`;
+		return getPublicObjectUrl(connectionType, bucketName, object.key, r2PublicUrl);
 	}
 
 	return (

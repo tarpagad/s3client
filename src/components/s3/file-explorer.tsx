@@ -31,7 +31,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { UserPrefs } from "@/lib/preferences";
 import type { S3ObjectInfo } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, getPublicObjectUrl } from "@/lib/utils";
+import type { BucketConnectionType } from "@/lib/types";
 import { Breadcrumbs } from "./breadcrumbs";
 import { ConfirmUploadDialog } from "./confirm-upload-dialog";
 import { CreateFolderDialog } from "./create-folder-dialog";
@@ -42,6 +43,8 @@ import { UploadZone } from "./upload-zone";
 interface FileExplorerProps {
 	connectionId: string;
 	bucketName: string;
+	connectionType: BucketConnectionType;
+	r2PublicUrl?: string;
 	initialObjects: S3ObjectInfo[];
 	initialNextToken?: string;
 	initialPrefs: UserPrefs;
@@ -50,6 +53,8 @@ interface FileExplorerProps {
 export function FileExplorer({
 	connectionId,
 	bucketName,
+	connectionType,
+	r2PublicUrl,
 	initialObjects,
 	initialNextToken,
 	initialPrefs,
@@ -698,7 +703,7 @@ export function FileExplorer({
 										</td>
 										<td className="px-4 py-3 text-right">
 											<div className="flex items-center justify-end gap-1">
-												{obj.isPublic && (
+												{(obj.isPublic || connectionType === "r2") && (
 													<Button
 														variant="ghost"
 														size="icon"
@@ -706,7 +711,7 @@ export function FileExplorer({
 														type="button"
 														onClick={(e) => {
 															e.stopPropagation();
-															const url = `https://${bucketName}.s3.amazonaws.com/${obj.key}`;
+															const url = getPublicObjectUrl(connectionType, bucketName, obj.key, r2PublicUrl);
 															navigator.clipboard.writeText(url);
 															toast.success("Public URL copied");
 														}}
@@ -716,6 +721,8 @@ export function FileExplorer({
 													</Button>
 												)}
 												<ObjectActions
+													connectionType={connectionType}
+													r2PublicUrl={r2PublicUrl}
 													connectionId={connectionId}
 													bucketName={bucketName}
 													object={obj}
@@ -764,7 +771,7 @@ export function FileExplorer({
 									</span>
 
 									<div className="absolute top-1 right-1 opacity-100 group-hover:opacity-100 flex items-center gap-1">
-										{obj.isPublic && (
+										{(obj.isPublic || connectionType === "r2") && (
 											<Button
 												variant="secondary"
 												size="icon"
@@ -772,7 +779,7 @@ export function FileExplorer({
 												type="button"
 												onClick={(e) => {
 													e.stopPropagation();
-													const url = `https://${bucketName}.s3.amazonaws.com/${obj.key}`;
+													const url = getPublicObjectUrl(connectionType, bucketName, obj.key, r2PublicUrl);
 													navigator.clipboard.writeText(url);
 													toast.success("Public URL copied");
 												}}
@@ -785,6 +792,8 @@ export function FileExplorer({
 											<ObjectActions
 												connectionId={connectionId}
 												bucketName={bucketName}
+												connectionType={connectionType}
+												r2PublicUrl={r2PublicUrl}
 												object={obj}
 												onRefresh={() => fetchObjects(prefix)}
 												onDelete={handleDelete}

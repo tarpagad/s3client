@@ -33,21 +33,21 @@ export interface ListObjectsResponse {
 
 export type BucketConnectionType = "s3" | "r2";
 
-export interface BucketConnection {
+export interface ConnectionInfo {
 	id: string;
-	userId: string;
 	name: string;
 	type: BucketConnectionType;
-	accessKeyId: string;
-	secretAccessKey: string;
 	region: string;
 	endpoint: string | null;
 	bucket: string | null;
-	createdAt: string;
-	updatedAt: string;
 }
 
-export const createBucketConnectionSchema = z.object({
+export interface DecryptedConnection extends ConnectionInfo {
+	accessKeyId: string;
+	secretAccessKey: string;
+}
+
+export const createConnectionSchema = z.object({
 	name: z.string().min(1, "Connection name is required"),
 	type: z.enum(["s3", "r2"]),
 	accessKeyId: z.string().min(1, "Access Key ID is required"),
@@ -57,11 +57,9 @@ export const createBucketConnectionSchema = z.object({
 	bucket: z.string().optional(),
 });
 
-export type CreateBucketConnectionInput = z.infer<
-	typeof createBucketConnectionSchema
->;
+export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
 
-export const updateBucketConnectionSchema = z.object({
+export const updateConnectionSchema = z.object({
 	name: z.string().min(1, "Connection name is required"),
 	accessKeyId: z.string().optional(),
 	secretAccessKey: z.string().optional(),
@@ -70,6 +68,4 @@ export const updateBucketConnectionSchema = z.object({
 	bucket: z.string().optional(),
 });
 
-export type UpdateBucketConnectionInput = z.infer<
-	typeof updateBucketConnectionSchema
->;
+export type UpdateConnectionInput = z.infer<typeof updateConnectionSchema>;
