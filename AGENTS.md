@@ -12,8 +12,9 @@ Next.js 16 (App Router) · TypeScript · Tailwind CSS · Bun · AWS S3 SDK · Zo
 bun install
 bun dev        # http://localhost:3000
 bun run build  # production build
-cp .env.example .env.local  # set ENCRYPTION_KEY
 ```
+
+> No `.env` setup required. Optionally set `ENCRYPTION_KEY` for a server-side encryption key fallback. Without it, each browser generates its own key on first use via Settings.
 
 ## Folder Structure
 
@@ -21,6 +22,7 @@ cp .env.example .env.local  # set ENCRYPTION_KEY
 src/
   actions/
     credentials-actions.ts  # Cookie-backed connection CRUD (add, list, get, update, remove)
+    key-actions.ts          # Encryption key management (set, change, remove)
     s3-actions.ts           # All S3/R2 operations
   app/
     (dashboard)/            # Main app routes, no auth required
@@ -57,12 +59,16 @@ Browser                    Server
 ```
 
 - **No authentication** — anyone can use the tool with their own credentials.
-- **Credentials** — encrypted with `AES-256-GCM` keyed from `ENCRYPTION_KEY` env var.
+- **Credentials** — encrypted with `AES-256-GCM`. The encryption key is stored in an HTTP-only `s3-key` cookie, or falls back to the `ENCRYPTION_KEY` env var if no cookie is set (or a dev default in development).
 - **Multi-connection** — cookie stores an encrypted JSON array of `StoredConnection[]`.
 - **S3 client** — created server-side per request; credentials never reach the browser after initial save.
 - **Preferences** — view mode and page size stored in plain `user_prefs` cookie.
 
 ## Data Model
+
+### `s3-key` cookie (HTTP-only, Strict-SameSite, 10 years)
+
+Stores the user's encryption passphrase in plain text (only readable server-side via HTTP-only). Used as the AES-256-GCM key to encrypt/decrypt the `s3-connections` cookie. Falls back to `ENCRYPTION_KEY` env var if absent.
 
 ### `s3-connections` cookie (HTTP-only, Strict-SameSite, 30 days)
 
@@ -141,7 +147,7 @@ Server actions return `{ success: true }` or `{ error: "message" }`. Client comp
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ENCRYPTION_KEY` | Yes | AES-256-GCM key (hashed to 32 bytes via SHA-256) |
+| `ENCRYPTION_KEY` | No | AES-256-GCM key (hashed to 32 bytes via SHA-256). Falls back to `s3-key` cookie if absent |
 | ~~`R2_PUBLIC_URL`~~ | ~~No~~ | **Removed** — use per-connection `publicUrl` field instead |
 
 ## Features
@@ -160,3 +166,4 @@ Server actions return `{ success: true }` or `{ error: "message" }`. Client comp
 - **HTTP-only cookie**: Credentials inaccessible to JavaScript, preventing XSS theft.
 - **Single cookie array**: All connections in one encrypted cookie avoids browser cookie limits.
 - **AES-256-GCM**: Authenticated encryption prevents tampering and ciphertext manipulation.
+- **Cookie-backed encryption key**: Encryption key stored in a separate HTTP-only `s3-key` cookie, falling back to `ENCRYPTION_KEY` env var. Zero server config required.

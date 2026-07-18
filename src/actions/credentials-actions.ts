@@ -15,6 +15,7 @@ import {
 } from "@/lib/types";
 
 const COOKIE_NAME = "s3-connections";
+const KEY_COOKIE_NAME = "s3-key";
 
 interface StoredConnection {
 	id: string;
@@ -27,30 +28,37 @@ interface StoredConnection {
 	publicUrl: string | null;
 }
 
-function getEncryptionKey(): string {
-	const key = process.env.ENCRYPTION_KEY;
-	if (!key) {
-		if (process.env.NODE_ENV === "production") {
-			throw new Error(
-				"ENCRYPTION_KEY environment variable is required in production."
-			);
-		}
+export async function resolveEncryptionKey(overrideKey?: string): Promise<string> {
+	if (overrideKey) return overrideKey;
+
+	const cookieStore = await cookies();
+	const keyCookie = cookieStore.get(KEY_COOKIE_NAME);
+	if (keyCookie?.value) return keyCookie.value;
+
+	const envKey = process.env.ENCRYPTION_KEY;
+	if (envKey) return envKey;
+
+	if (process.env.NODE_ENV !== "production") {
 		return "default-dev-key-do-not-use-in-prod";
 	}
-	return key;
+
+	throw new Error(
+		"No encryption key configured. Set the ENCRYPTION_KEY environment variable or set an encryption key in Settings."
+	);
 }
 
 function generateId(): string {
 	return crypto.randomUUID();
 }
 
-async function readConnections(): Promise<StoredConnection[]> {
+export async function readConnections(encryptionKey?: string): Promise<StoredConnection[]> {
 	const cookieStore = await cookies();
 	const cookie = cookieStore.get(COOKIE_NAME);
 	if (!cookie?.value) return [];
 
+	const key = await resolveEncryptionKey(encryptionKey);
 	try {
-		const decrypted = await decrypt(cookie.value, getEncryptionKey());
+		const decrypted = await decrypt(cookie.value, key);
 		if (!decrypted) return [];
 		return JSON.parse(decrypted) as StoredConnection[];
 	} catch {
@@ -58,10 +66,11 @@ async function readConnections(): Promise<StoredConnection[]> {
 	}
 }
 
-async function writeConnections(connections: StoredConnection[]): Promise<void> {
+export async function writeConnections(connections: StoredConnection[], encryptionKey?: string): Promise<void> {
 	const cookieStore = await cookies();
+	const key = await resolveEncryptionKey(encryptionKey);
 	const jsonStr = JSON.stringify(connections);
-	const encrypted = await encrypt(jsonStr, getEncryptionKey());
+	const encrypted = await encrypt(jsonStr, key);
 
 	cookieStore.set(COOKIE_NAME, encrypted, {
 		httpOnly: true,
@@ -92,11 +101,12 @@ export async function addConnection(
 		return { error: result.error.issues[0].message };
 	}
 
+	const key = await resolveEncryptionKey();
 	const credsJson = JSON.stringify({
 		accessKeyId: result.data.accessKeyId,
 		secretAccessKey: result.data.secretAccessKey,
 	});
-	const encryptedCredentials = await encrypt(credsJson, getEncryptionKey());
+	const encryptedCredentials = await encrypt(credsJson, key);
 
 	const stored: StoredConnection = {
 		id: generateId(),
@@ -137,9 +147,10 @@ export async function getDecryptedConnection(
 	const stored = connections.find((c) => c.id === id);
 	if (!stored) return null;
 
+	const key = await resolveEncryptionKey();
 	const decrypted = await decrypt(
 		stored.encryptedCredentials,
-		getEncryptionKey()
+		key
 	);
 	if (!decrypted) return null;
 
@@ -177,6 +188,7 @@ export async function updateConnection(
 	}
 
 	const existing = connections[index];
+	const key = await resolveEncryptionKey();
 
 	const hasNewCredentials =
 		result.data.accessKeyId && result.data.secretAccessKey;
@@ -187,7 +199,7 @@ export async function updateConnection(
 			accessKeyId: result.data.accessKeyId,
 			secretAccessKey: result.data.secretAccessKey,
 		});
-		encryptedCredentials = await encrypt(credsJson, getEncryptionKey());
+		encryptedCredentials = await encrypt(credsJson, key);
 	}
 
 	connections[index] = {
