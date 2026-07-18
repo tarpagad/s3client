@@ -22,11 +22,13 @@ export function EditConnectionForm({ connection }: EditConnectionFormProps) {
 		const formData = new FormData(event.currentTarget);
 		const accessKeyId = formData.get("accessKeyId") as string;
 		const secretAccessKey = formData.get("secretAccessKey") as string;
+		const publicUrl = formData.get("publicUrl") as string;
 		const data = {
 			name: formData.get("name") as string,
 			region: (formData.get("region") as string) || "us-east-1",
 			endpoint: (formData.get("endpoint") as string) || undefined,
 			bucket: (formData.get("bucket") as string) || undefined,
+			publicUrl: publicUrl || undefined,
 			...(accessKeyId ? { accessKeyId } : {}),
 			...(secretAccessKey ? { secretAccessKey } : {}),
 		};
@@ -62,6 +64,11 @@ export function EditConnectionForm({ connection }: EditConnectionFormProps) {
 						<Label htmlFor="endpoint">Endpoint</Label>
 						<Input id="endpoint" name="endpoint" defaultValue={connection.endpoint || ""} placeholder={isR2 ? "https://<accountid>.r2.cloudflarestorage.com" : "Optional custom endpoint"} />
 						{isR2 && <p className="text-xs text-muted-foreground">Your R2 endpoint URL from the Cloudflare dashboard.</p>}
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="publicUrl">Public URL (optional)</Label>
+						<Input id="publicUrl" name="publicUrl" defaultValue={connection.publicUrl || ""} placeholder={isR2 ? "https://pub-<bucketid>.r2.dev" : "https://my-bucket.example.com"} />
+						<p className="text-xs text-muted-foreground">Base URL for public object links. If set, this will be used instead of the default S3 domain.</p>
 					</div>
 				</CardContent>
 				<div className="px-6 pb-6">

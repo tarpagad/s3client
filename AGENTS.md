@@ -76,14 +76,15 @@ Encrypted contents:
     "encryptedCredentials": "...",   // AES-256-GCM({ accessKeyId, secretAccessKey })
     "region": "us-east-1",
     "endpoint": null,                // R2 endpoint URL
-    "bucket": null                   // optional default bucket
+    "bucket": null,                  // optional default bucket
+    "publicUrl": null                // optional public base URL for object links
   }
 ]
 ```
 
 **ConnectionInfo** (returned by `listConnections()` / `getConnection()` — no credentials):
 ```json
-{ "id", "name", "type", "region", "endpoint", "bucket" }
+{ "id", "name", "type", "region", "endpoint", "bucket", "publicUrl" }
 ```
 
 **DecryptedConnection** (internal: `getDecryptedConnection()`) extends `ConnectionInfo` with `accessKeyId` + `secretAccessKey`.
@@ -141,7 +142,7 @@ Server actions return `{ success: true }` or `{ error: "message" }`. Client comp
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `ENCRYPTION_KEY` | Yes | AES-256-GCM key (hashed to 32 bytes via SHA-256) |
-| `R2_PUBLIC_URL` | No | Base URL for R2 public object links |
+| ~~`R2_PUBLIC_URL`~~ | ~~No~~ | **Removed** — use per-connection `publicUrl` field instead |
 
 ## Features
 

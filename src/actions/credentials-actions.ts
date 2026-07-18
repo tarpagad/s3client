@@ -24,6 +24,7 @@ interface StoredConnection {
 	region: string;
 	endpoint: string | null;
 	bucket: string | null;
+	publicUrl: string | null;
 }
 
 function getEncryptionKey(): string {
@@ -79,6 +80,7 @@ function toConnectionInfo(c: StoredConnection): ConnectionInfo {
 		region: c.region,
 		endpoint: c.endpoint,
 		bucket: c.bucket,
+		publicUrl: c.publicUrl,
 	};
 }
 
@@ -104,6 +106,7 @@ export async function addConnection(
 		region: result.data.region,
 		endpoint: result.data.endpoint || null,
 		bucket: result.data.bucket || null,
+		publicUrl: result.data.publicUrl || null,
 	};
 
 	const connections = await readConnections();
@@ -152,6 +155,7 @@ export async function getDecryptedConnection(
 		region: stored.region,
 		endpoint: stored.endpoint,
 		bucket: stored.bucket,
+		publicUrl: stored.publicUrl,
 		accessKeyId: creds.accessKeyId,
 		secretAccessKey: creds.secretAccessKey,
 	};
@@ -193,6 +197,7 @@ export async function updateConnection(
 		region: result.data.region,
 		endpoint: result.data.endpoint || null,
 		bucket: result.data.bucket || null,
+		publicUrl: result.data.publicUrl ?? existing.publicUrl,
 	};
 
 	await writeConnections(connections);

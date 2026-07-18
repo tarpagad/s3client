@@ -44,7 +44,7 @@ export default async function BucketPage({ params }: BucketPageProps) {
 				connectionId={connectionId}
 				bucketName={bucketName}
 				connectionType={connection.type}
-				r2PublicUrl={process.env.R2_PUBLIC_URL}
+				publicUrl={connection.publicUrl}
 				initialObjects={initialObjects}
 				initialNextToken={initialNextToken}
 				initialPrefs={prefs}

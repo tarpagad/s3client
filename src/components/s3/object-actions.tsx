@@ -22,7 +22,7 @@ interface ObjectActionsProps {
 	connectionId: string;
 	bucketName: string;
 	connectionType: BucketConnectionType;
-	r2PublicUrl?: string;
+	publicUrl?: string | null;
 	object: S3ObjectInfo;
 	onRefresh: () => void;
 	onDelete: (key: string) => void;
@@ -33,7 +33,7 @@ export function ObjectActions({
 	connectionId,
 	bucketName,
 	connectionType,
-	r2PublicUrl,
+	publicUrl,
 	object,
 	onRefresh,
 	onDelete,
@@ -92,7 +92,7 @@ export function ObjectActions({
 	}
 
 	function getPublicUrl() {
-		return getPublicObjectUrl(connectionType, bucketName, object.key, r2PublicUrl);
+		return getPublicObjectUrl(bucketName, object.key, publicUrl);
 	}
 
 	return (

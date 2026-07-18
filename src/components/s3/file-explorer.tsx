@@ -30,9 +30,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { UserPrefs } from "@/lib/preferences";
-import type { S3ObjectInfo } from "@/lib/types";
+import type { BucketConnectionType, S3ObjectInfo } from "@/lib/types";
 import { cn, getPublicObjectUrl } from "@/lib/utils";
-import type { BucketConnectionType } from "@/lib/types";
 import { Breadcrumbs } from "./breadcrumbs";
 import { ConfirmUploadDialog } from "./confirm-upload-dialog";
 import { CreateFolderDialog } from "./create-folder-dialog";
@@ -44,7 +43,7 @@ interface FileExplorerProps {
 	connectionId: string;
 	bucketName: string;
 	connectionType: BucketConnectionType;
-	r2PublicUrl?: string;
+	publicUrl?: string | null;
 	initialObjects: S3ObjectInfo[];
 	initialNextToken?: string;
 	initialPrefs: UserPrefs;
@@ -54,7 +53,7 @@ export function FileExplorer({
 	connectionId,
 	bucketName,
 	connectionType,
-	r2PublicUrl,
+	publicUrl,
 	initialObjects,
 	initialNextToken,
 	initialPrefs,
@@ -711,7 +710,7 @@ export function FileExplorer({
 														type="button"
 														onClick={(e) => {
 															e.stopPropagation();
-															const url = getPublicObjectUrl(connectionType, bucketName, obj.key, r2PublicUrl);
+															const url = getPublicObjectUrl(bucketName, obj.key, publicUrl);
 															navigator.clipboard.writeText(url);
 															toast.success("Public URL copied");
 														}}
@@ -722,7 +721,7 @@ export function FileExplorer({
 												)}
 												<ObjectActions
 													connectionType={connectionType}
-													r2PublicUrl={r2PublicUrl}
+													publicUrl={publicUrl}
 													connectionId={connectionId}
 													bucketName={bucketName}
 													object={obj}
@@ -779,7 +778,7 @@ export function FileExplorer({
 												type="button"
 												onClick={(e) => {
 													e.stopPropagation();
-													const url = getPublicObjectUrl(connectionType, bucketName, obj.key, r2PublicUrl);
+													const url = getPublicObjectUrl(bucketName, obj.key, publicUrl);
 													navigator.clipboard.writeText(url);
 													toast.success("Public URL copied");
 												}}
@@ -793,7 +792,7 @@ export function FileExplorer({
 												connectionId={connectionId}
 												bucketName={bucketName}
 												connectionType={connectionType}
-												r2PublicUrl={r2PublicUrl}
+												publicUrl={publicUrl}
 												object={obj}
 												onRefresh={() => fetchObjects(prefix)}
 												onDelete={handleDelete}

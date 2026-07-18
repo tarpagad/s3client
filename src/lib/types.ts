@@ -40,6 +40,7 @@ export interface ConnectionInfo {
 	region: string;
 	endpoint: string | null;
 	bucket: string | null;
+	publicUrl: string | null;
 }
 
 export interface DecryptedConnection extends ConnectionInfo {
@@ -55,6 +56,7 @@ export const createConnectionSchema = z.object({
 	region: z.string().default("us-east-1"),
 	endpoint: z.string().optional(),
 	bucket: z.string().optional(),
+	publicUrl: z.string().optional(),
 });
 
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
@@ -66,6 +68,7 @@ export const updateConnectionSchema = z.object({
 	region: z.string().default("us-east-1"),
 	endpoint: z.string().optional(),
 	bucket: z.string().optional(),
+	publicUrl: z.string().optional(),
 });
 
 export type UpdateConnectionInput = z.infer<typeof updateConnectionSchema>;

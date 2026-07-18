@@ -28,6 +28,7 @@ export function AddConnectionForm() {
 			region: (formData.get("region") as string) || "us-east-1",
 			endpoint: (formData.get("endpoint") as string) || undefined,
 			bucket: (formData.get("bucket") as string) || undefined,
+			publicUrl: (formData.get("publicUrl") as string) || undefined,
 		};
 		try {
 			const response = await addConnection(data);
@@ -81,6 +82,11 @@ export function AddConnectionForm() {
 							<p className="text-xs text-muted-foreground">Your R2 endpoint URL from the Cloudflare dashboard. Required for R2 connections.</p>
 						</div>
 					)}
+					<div className="space-y-2">
+						<Label htmlFor="publicUrl">Public URL (optional)</Label>
+						<Input id="publicUrl" name="publicUrl" placeholder={type === "r2" ? "https://pub-<bucketid>.r2.dev" : "https://my-bucket.example.com"} />
+						<p className="text-xs text-muted-foreground">Base URL for public object links. If set, this will be used instead of the default S3 domain.</p>
+					</div>
 				</CardContent>
 				<div className="px-6 pb-6">
 					<Button className="w-full" type="submit" disabled={loading}>
