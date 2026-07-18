@@ -1,155 +1,161 @@
-# S3 Web Client - Architecture & Implementation Plan
+# S3 Web Client
 
-## 1. Project Overview
-A stateless web-based S3/R2 client. Users connect by entering their AWS/Cloudflare credentials, which are encrypted (AES-256-GCM) and stored exclusively in an HTTP-only browser cookie. No database, no authentication, no user accounts — credentials never touch server-side storage.
+Stateless S3/R2 browser. No auth, no database — credentials are AES-256-GCM encrypted and stored in an HTTP-only cookie.
 
-## 2. Tech Stack
-- **Framework**: Next.js (App Router)
-- **Deployment target**: Railway
-- **Styling**: Tailwind CSS
-- **Backend/Logic**: Server Actions, AWS S3 SDK
-- **Language**: TypeScript
-- **Package Manager**: Bun
+## Stack
 
-## 3. Architecture & Security
-- **Authentication**: None. The app is open — anyone can connect their own S3/R2 credentials.
-- **Credentials Management**:
-  - S3/R2 credentials are encrypted client-side with AES-256-GCM using the `ENCRYPTION_KEY` env var.
-  - Encrypted connections are stored as a JSON array in a single HTTP-only, Strict-SameSite cookie (`s3-connections`).
-  - No credentials are ever stored in a database or on the server filesystem.
-  - The encryption key is the only secret — stored as an environment variable on the deployment platform.
-- **S3/R2 Interaction**:
-  - Server Actions decrypt credentials from the cookie on each request.
-  - The S3 client is instantiated server-side with the decrypted credentials.
-  - No credentials are exposed to the client-side JavaScript.
-- **Multi-Connection**: Multiple connections (S3 + R2) are supported via an encrypted array in the cookie.
+Next.js 16 (App Router) · TypeScript · Tailwind CSS · Bun · AWS S3 SDK · Zod
 
-## 3.5 Folder Structure
+## Run
+
+```bash
+bun install
+bun dev        # http://localhost:3000
+bun run build  # production build
+cp .env.example .env.local  # set ENCRYPTION_KEY
+```
+
+## Folder Structure
+
 ```
 src/
-  app/              # Next.js App Router
-    (dashboard)/    # Main app routes (no auth required)
-    (info)/         # Static info pages (privacy, terms)
-    layout.tsx      # Root layout
-    page.tsx        # Landing page
-  components/       # React Components
-    ui/             # Reusable UI components (Button, Card, Input, Label)
-    s3/             # S3-specific components (FileExplorer, SidebarNav, etc.)
-  lib/              # Utilities and Helpers
-    s3.ts           # S3 Client factory (reads credentials from cookie)
-    encryption.ts   # AES-256-GCM encryption/decryption
-    preferences.ts  # User display preferences (cookie-backed)
-    types.ts        # TypeScript types and Zod schemas
-    utils.ts        # General utilities (cn, getPublicObjectUrl)
-  actions/          # Server Actions
-    s3-actions.ts        # S3/R2 operations (listBuckets, listObjects, upload, delete, etc.)
-    credentials-actions.ts # Connection CRUD (add, list, get, update, remove) — cookie-backed
+  actions/
+    credentials-actions.ts  # Cookie-backed connection CRUD (add, list, get, update, remove)
+    s3-actions.ts           # All S3/R2 operations
+  app/
+    (dashboard)/            # Main app routes, no auth required
+    (info)/                 # Static pages (privacy, terms)
+    page.tsx                # Landing page
+    layout.tsx              # Root layout (ThemeProvider, Toaster)
+  components/
+    s3/                     # FileExplorer, SidebarNav, UploadZone, ObjectActions, PreviewModal, dialogs
+    ui/                     # Button, Card, Input, Label
+  lib/
+    s3.ts                   # getS3Client(id) → reads decrypted credentials from cookie, returns S3Client
+    encryption.ts           # AES-256-GCM encrypt/decrypt wrappers
+    types.ts                # All TypeScript types + Zod schemas
+    preferences.ts          # getUserPrefs() → reads user_prefs cookie
+    utils.ts                # cn(), getPublicObjectUrl()
 ```
 
-## 4. Implementation Status
+## Architecture
 
-### Phase 1: Foundation & Security (Complete)
-- [x] Encryption system: AES-256-GCM via `ENCRYPTION_KEY` env var.
-- [x] Connection form that encrypts credentials and stores them in an HTTP-only cookie.
-- [x] Multi-connection support via encrypted JSON array in a single cookie.
-
-### Phase 2: Core S3 Services (Complete)
-- [x] S3 Client factory (`src/lib/s3.ts`) reads decrypted credentials from cookie.
-- [x] Server Actions for:
-  - `listBuckets`
-  - `listObjects` (with sorting and pagination)
-  - `putObject` (upload)
-  - `getObject` (presigned download URL)
-  - `deleteObject` / `deleteObjects` (bulk)
-  - `copyObject` (rename)
-  - `searchObjects`
-  - `countObjects`
-  - `createFolder`
-  - `makePublic`
-  - `getFileContent` (text preview)
-
-### Phase 3: Dashboard & File Explorer UI (Complete)
-- [x] Dashboard: Card view of connections (S3 and R2 grouped).
-- [x] Connection management: add, edit, delete.
-- [x] Bucket browser: card view of buckets per connection.
-- [x] File Explorer:
-  - Breadcrumb navigation.
-  - List/Grid view toggle.
-  - File type icons.
-  - Pagination.
-  - Sorting (date, name).
-  - Search within folder.
-- [x] Upload: drag-and-drop zone with progress indicators and bulk upload.
-- [x] Sidebar navigation with active connection list.
-- [x] Dark/light theme toggle.
-
-### Phase 4: File Context Actions (Complete)
-- [x] Context menu per file/folder.
-- [x] Preview (images, PDF, text).
-- [x] Download (presigned URL).
-- [x] Rename.
-- [x] Delete (single and bulk).
-- [x] Copy key.
-- [x] Make public / copy public URL.
-- [x] New folder.
-- [x] Bulk selection (checkbox + ctrl/meta click) with bulk actions.
-
-### Phase 5: Polish & Advanced Features (In Progress)
-- [x] File previews (images, PDF, text files).
-- [x] Error handling with toast notifications.
-- [x] Optimistic UI for deletes.
-- [x] R2 public URL support.
-- [x] User preferences (view mode, items per page) stored in cookie.
-- [ ] Progress bar refinements.
-- [ ] Right-click context menu (currently click-based).
-
-## 5. Data Model
-
-### Cookie: `s3-connections` (Encrypted)
 ```
-Cookie contains: Encrypt(JSON.stringify(StoredConnection[]))
+Browser                    Server
+┌──────────┐              ┌────────────────────────────┐
+│ Cookie:  │  ──request──→│ credentials-actions.ts     │
+│ s3-conn. │              │  decrypts cookie array     │
+│ (encrypt)│              │  finds connection by ID    │
+└──────────┘              │         ↓                  │
+                          │ s3.ts: getS3Client(id)     │
+                          │  decrypts inner creds blob │
+                          │  creates S3Client          │
+                          │         ↓                  │
+                          │ s3-actions.ts              │
+                          │  uses S3Client for ops     │
+                          └────────────────────────────┘
 ```
 
-**StoredConnection** (before encryption):
+- **No authentication** — anyone can use the tool with their own credentials.
+- **Credentials** — encrypted with `AES-256-GCM` keyed from `ENCRYPTION_KEY` env var.
+- **Multi-connection** — cookie stores an encrypted JSON array of `StoredConnection[]`.
+- **S3 client** — created server-side per request; credentials never reach the browser after initial save.
+- **Preferences** — view mode and page size stored in plain `user_prefs` cookie.
+
+## Data Model
+
+### `s3-connections` cookie (HTTP-only, Strict-SameSite, 30 days)
+
+Encrypted contents:
+```jsonc
+[
+  {
+    "id": "uuid",
+    "name": "Production S3",
+    "type": "s3",                    // "s3" | "r2"
+    "encryptedCredentials": "...",   // AES-256-GCM({ accessKeyId, secretAccessKey })
+    "region": "us-east-1",
+    "endpoint": null,                // R2 endpoint URL
+    "bucket": null                   // optional default bucket
+  }
+]
+```
+
+**ConnectionInfo** (returned by `listConnections()` / `getConnection()` — no credentials):
 ```json
-{
-  "id": "uuid",
-  "name": "Production S3",
-  "type": "s3 | r2",
-  "encryptedCredentials": "AES-256-GCM encrypted { accessKeyId, secretAccessKey }",
-  "region": "us-east-1",
-  "endpoint": null,
-  "bucket": null
+{ "id", "name", "type", "region", "endpoint", "bucket" }
+```
+
+**DecryptedConnection** (internal: `getDecryptedConnection()`) extends `ConnectionInfo` with `accessKeyId` + `secretAccessKey`.
+
+### `user_prefs` cookie (plain)
+```json
+{ "viewMode": "list", "itemsPerPage": 20 }
+```
+
+## Coding Patterns
+
+### Server Actions
+
+All server-side logic lives in `src/actions/`. Files use `"use server"` directive. Actions are called from server components (directly) and client components (via async functions).
+
+```typescript
+// Server component — direct call
+const connections = await listConnections();
+
+// Client component — async handler
+const result = await addConnection(data);
+```
+
+### S3 Operations
+
+All S3 operations take `connectionId` as the first parameter. Internally, `getS3Client(connectionId)` reads the decrypted credentials from the cookie array. Client components that need S3 operations receive `connectionId` as a prop from their server component parent.
+
+```typescript
+// All s3-actions.ts functions follow this pattern:
+export async function listObjects(connectionId: string, bucket: string, ...) {
+  const client = await getS3Client(connectionId);  // decrypts cookie → S3Client
+  const response = await client.send(new ListObjectsV2Command({...}));
+  ...
 }
 ```
 
-**ConnectionInfo** (returned by list/get, no credentials exposed):
-```json
-{
-  "id": "uuid",
-  "name": "Production S3",
-  "type": "s3 | r2",
-  "region": "us-east-1",
-  "endpoint": null,
-  "bucket": null
-}
-```
+To add a new S3 operation: add the function to `src/actions/s3-actions.ts`, re-export or call it from components as needed. No other changes required — `connectionId` and cookie decryption are handled automatically.
 
-### Cookie: `user_prefs` (Plain)
-```json
-{
-  "viewMode": "list | grid",
-  "itemsPerPage": 20
-}
-```
+### Dynamic Pages
 
-## 6. Environment Variables
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ENCRYPTION_KEY` | Yes | Key for AES-256-GCM encryption (hashed with SHA-256 internally) |
-| `R2_PUBLIC_URL` | No | Base URL for constructing R2 public object URLs |
+Pages that read cookies are marked `export const dynamic = "force-dynamic"` to prevent stale static generation.
 
-## 7. Key Design Decisions
-- **No DB, no auth**: Chosen to eliminate attack surface. An attacker who compromises the server gets zero stored credentials (only what's in-flight during active sessions).
-- **Cookie over localStorage**: HTTP-only cookies are inaccessible to JavaScript, preventing XSS-based credential theft.
-- **Multi-connection array**: Instead of one cookie per connection, all connections share a single encrypted cookie to stay within browser cookie limits.
+### Components
+
+- **Server components**: Page-level (`page.tsx`, `layout.tsx`) — fetch data, pass props down.
+- **Client components**: Interactive (`"use client"`) — forms, file explorer, dialogs. All located in `src/components/s3/`.
+- **Prefer co-location**: Form components live next to their pages (e.g., `add-connection-form.tsx` in the same route folder).
+
+### Error Handling
+
+Server actions return `{ success: true }` or `{ error: "message" }`. Client components check the result and display `toast.error()` or `toast.success()` from `sonner`. Exceptions thrown in actions are caught and logged server-side.
+
+## Environment Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `ENCRYPTION_KEY` | Yes | AES-256-GCM key (hashed to 32 bytes via SHA-256) |
+| `R2_PUBLIC_URL` | No | Base URL for R2 public object links |
+
+## Features
+
+- Multi-connection (S3 + R2) with add/edit/delete
+- Bucket browser with card layout
+- File explorer: list/grid views, breadcrumbs, sorting, search, pagination
+- Drag-and-drop upload with progress, bulk upload, public/private toggle
+- Object actions: preview (images, PDF, text), download, rename, delete, bulk delete, make public, copy key/URL
+- Dark/light theme toggle
+- User preferences (view mode, page size) persisted in cookie
+
+## Key Decisions
+
+- **No DB, no auth**: Server breach leaks zero stored credentials — only in-flight data.
+- **HTTP-only cookie**: Credentials inaccessible to JavaScript, preventing XSS theft.
+- **Single cookie array**: All connections in one encrypted cookie avoids browser cookie limits.
+- **AES-256-GCM**: Authenticated encryption prevents tampering and ciphertext manipulation.
